@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version and metadata for local_partnerapi.
+ * Admin settings: register the Partner API management page in the admin tree.
  *
  * @package    local_partnerapi
  * @copyright  2026 Saylor Academy
@@ -24,8 +24,11 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'local_partnerapi';
-$plugin->version   = 2026061401;       // YYYYMMDDXX.
-$plugin->requires  = 2022112800;       // Moodle 4.1 (LTS) or later.
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.1.0';
+if ($hassiteconfig) {
+    $ADMIN->add('server', new admin_externalpage(
+        'local_partnerapi_manage',
+        get_string('manageclients', 'local_partnerapi'),
+        new moodle_url('/local/partnerapi/manage.php'),
+        'local/partnerapi:manage'
+    ));
+}

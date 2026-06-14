@@ -27,3 +27,27 @@ defined('MOODLE_INTERNAL') || die();
 $string['pluginname'] = 'Partner API';
 $string['partnerapi:manage'] = 'Manage Partner API clients and cohort scopes';
 $string['privacy:metadata'] = 'The Partner API plugin does not store any personal data itself. It exposes existing Moodle learner data to authorized, cohort-scoped partner clients over a read-only API.';
+
+// Management UI.
+$string['manageclients'] = 'Partner API clients';
+$string['manage_intro'] = 'Partner API clients are scoped tokens used by the Partner Dashboard sync service. Each client can read only the cohorts assigned to it. Treat tokens as secrets and transmit them over HTTPS only.';
+$string['addclient'] = 'Add client';
+$string['clientname'] = 'Client name';
+$string['cohorts'] = 'Cohorts';
+$string['cohorts_help'] = 'The cohorts this client is allowed to read. The token can only return learners (and their enrolments, grades and access logs) for these cohorts; requests for any other cohort are ignored.';
+$string['suspended'] = 'Suspended';
+$string['token'] = 'Token';
+$string['status'] = 'Status';
+$string['statusactive'] = 'Active';
+$string['statussuspended'] = 'Suspended';
+$string['actions'] = 'Actions';
+$string['regenerate'] = 'Regenerate token';
+$string['enable'] = 'Enable';
+$string['suspend'] = 'Suspend';
+$string['clientsaved'] = 'Client saved.';
+$string['clientdeleted'] = 'Client deleted.';
+$string['tokenregenerated'] = 'A new token was generated for the client.';
+$string['confirmdelete'] = 'Delete the client "{$a}" and its cohort scope? Any dashboard using its token will stop syncing. This cannot be undone.';
+$string['noclients'] = 'No Partner API clients yet. Use "Add client" to create one.';
+$string['nocohortsselected'] = 'Select at least one cohort.';
+$string['missingcohort'] = '(deleted cohort)';
