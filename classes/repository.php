@@ -295,6 +295,39 @@ class repository {
         return $result;
     }
 
+    /**
+     * Cohort id → name/idnumber for the given (already scope-checked) cohort ids.
+     *
+     * @param int[] $cohortids
+     * @return array[] list of {id, name, idnumber}
+     */
+    public static function get_cohorts(array $cohortids): array {
+        global $DB;
+
+        $cohortids = self::clean_ids($cohortids);
+        if (empty($cohortids)) {
+            return [];
+        }
+
+        list($insql, $params) = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'c');
+        $rows = $DB->get_records_sql(
+            "SELECT id, name, idnumber
+               FROM {cohort}
+              WHERE id $insql",
+            $params
+        );
+
+        $out = [];
+        foreach ($rows as $r) {
+            $out[] = [
+                'id'       => (int)$r->id,
+                'name'     => $r->name,
+                'idnumber' => $r->idnumber ?? '',
+            ];
+        }
+        return $out;
+    }
+
     // ----- Private helpers -------------------------------------------------
 
     /**

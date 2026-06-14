@@ -15,17 +15,20 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version and metadata for local_partnerapi.
+ * GET /local/partnerapi/v1/cohorts
+ *
+ * Returns the client's allowed cohorts with their names, so the dashboard can
+ * display human-readable cohort names instead of bare ids. Always scoped to
+ * the token's allowed cohorts.
  *
  * @package    local_partnerapi
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+require(__DIR__ . '/../bootstrap.php');
 
-$plugin->component = 'local_partnerapi';
-$plugin->version   = 2026061402;       // YYYYMMDDXX.
-$plugin->requires  = 2022112800;       // Moodle 4.1 (LTS) or later.
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.1.0';
+use local_partnerapi\repository;
+use local_partnerapi\util;
+
+util::send_json(repository::get_cohorts($allowedcohorts));

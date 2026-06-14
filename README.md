@@ -17,6 +17,7 @@ array** with real HTTP status codes (not a Moodle web-service envelope):
 | Endpoint | Params | Returns |
 |---|---|---|
 | `/v1/learners` | `cohortids[]` | learner profiles + cohort membership |
+| `/v1/cohorts` | (none) | the client's cohorts with names (`id`, `name`, `idnumber`) |
 | `/v1/enrollments` | `userids[]` | per-course progress + completion |
 | `/v1/completions` | `userids[]` | flat completion records (optional; unused by current sync) |
 | `/v1/grades` | `userids[]` | grade items |
