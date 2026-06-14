@@ -149,8 +149,10 @@ class repository {
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
             list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
 
-            // Distinct (user, course) enrolments.
-            $rows = $DB->get_records_sql(
+            // Distinct (user, course) enrolments. Use a recordset and build a
+            // plain list: get_records_sql keys rows by the first column (userid)
+            // and would silently drop a learner's additional courses.
+            $rs = $DB->get_recordset_sql(
                 "SELECT DISTINCT ue.userid, c.id AS courseid, c.shortname, c.fullname
                    FROM {user_enrolments} ue
                    JOIN {enrol} e ON e.id = ue.enrolid
@@ -158,6 +160,11 @@ class repository {
                   WHERE ue.userid $uin AND c.id <> :site",
                 array_merge($uparams, ['site' => self::SITE_COURSE])
             );
+            $rows = [];
+            foreach ($rs as $r) {
+                $rows[] = $r;
+            }
+            $rs->close();
             if (empty($rows)) {
                 continue;
             }
