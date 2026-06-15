@@ -65,6 +65,104 @@ function local_partnerapi_extend_navigation(global_navigation $navigation) {
 }
 
 /**
+ * Add an "Affiliation" section to the user edit form with a multi-select of
+ * available AFF- cohorts. This is the primary self-service mechanism for
+ * learners to declare their partner affiliation.
+ *
+ * Moodle calls this hook on the user edit / editadvanced pages.
+ *
+ * @param MoodleQuickForm $mform
+ * @param stdClass $user
+ */
+function local_partnerapi_user_edit_form_definition($mform, $user) {
+    global $DB;
+
+    $mform->addElement('header', 'local_partnerapi_affiliation_header',
+        get_string('affiliation', 'local_partnerapi'));
+
+    // Build the list of available AFF- cohorts.
+    $params = ['aff' => LOCAL_PARTNERAPI_AFFILIATION_PREFIX . '%'];
+    $all = $DB->get_records_sql(
+        "SELECT c.id, c.name
+           FROM {cohort} c
+          WHERE c.visible = 1 AND " . $DB->sql_like('c.idnumber', ':aff', false) . "
+       ORDER BY c.name ASC",
+        $params
+    );
+
+    if (empty($all)) {
+        $mform->addElement('static', 'local_partnerapi_noaff', '',
+            get_string('noaffiliationsavailable', 'local_partnerapi'));
+        return;
+    }
+
+    $options = [];
+    foreach ($all as $c) {
+        $options[$c->id] = format_string($c->name);
+    }
+
+    $select = $mform->addElement('select', 'local_partnerapi_affiliations',
+        get_string('affiliations', 'local_partnerapi'), $options);
+    $select->setMultiple(true);
+    $mform->addHelpButton('local_partnerapi_affiliations', 'affiliationchoose', 'local_partnerapi');
+
+    // Pre-select current memberships.
+    if (!empty($user->id)) {
+        $current = local_partnerapi_user_affiliations((int) $user->id);
+        $defaults = array_map(fn($c) => $c->id, $current);
+        $mform->setDefault('local_partnerapi_affiliations', $defaults);
+    }
+}
+
+/**
+ * Save the affiliation selections from the user edit form.
+ *
+ * Called by Moodle after the form is submitted and validated.
+ *
+ * @param stdClass $user
+ * @param stdClass $usernew the submitted form data
+ */
+function local_partnerapi_user_edit_form_save($user, $usernew) {
+    global $DB;
+    require_once(__DIR__ . '/../../cohort/lib.php');
+
+    $selected = $usernew->local_partnerapi_affiliations ?? [];
+    if (!is_array($selected)) {
+        $selected = [$selected];
+    }
+    $selected = array_map('intval', $selected);
+    $userid = (int) ($usernew->id ?? $user->id ?? 0);
+    if ($userid <= 0) {
+        return;
+    }
+
+    // Only operate on valid AFF- cohorts.
+    $params = ['aff' => LOCAL_PARTNERAPI_AFFILIATION_PREFIX . '%'];
+    $allAff = $DB->get_fieldset_sql(
+        "SELECT c.id FROM {cohort} c WHERE c.visible = 1 AND " . $DB->sql_like('c.idnumber', ':aff', false),
+        $params
+    );
+    $validIds = array_map('intval', $allAff);
+
+    // Current AFF- memberships.
+    $current = array_map(fn($c) => (int) $c->id, local_partnerapi_user_affiliations($userid));
+
+    // Add new selections.
+    foreach ($selected as $cid) {
+        if (in_array($cid, $validIds, true) && !in_array($cid, $current, true)) {
+            cohort_add_member($cid, $userid);
+        }
+    }
+
+    // Remove deselected ones.
+    foreach ($current as $cid) {
+        if (!in_array($cid, $selected, true)) {
+            cohort_remove_member($cid, $userid);
+        }
+    }
+}
+
+/**
  * Add an "Affiliation" category to the user profile page listing the partner
  * cohorts (idnumber starting `AFF-`) the user belongs to, plus a link to the
  * self-select chooser for the current user.
