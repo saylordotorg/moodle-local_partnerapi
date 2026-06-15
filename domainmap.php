@@ -116,17 +116,18 @@ if (!empty($map)) {
 echo html_writer::start_tag('form', [
     'method' => 'post',
     'action' => $thisurl->out(false),
-    'class' => 'form-inline mt-3',
+    'class' => 'mt-4 pt-4',
+    'style' => 'border-top: 1px solid #dee2e6;',
 ]);
 echo html_writer::input_hidden_params($thisurl);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
 echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'add']);
 
-echo html_writer::start_div('d-flex flex-wrap align-items-end gap-2');
+echo html_writer::start_div('d-flex flex-wrap align-items-end', ['style' => 'gap: 1rem;']);
 
 // Domain input.
-echo html_writer::start_div('form-group');
-echo html_writer::tag('label', 'Email domain', ['for' => 'id_domain', 'class' => 'd-block font-weight-bold']);
+echo html_writer::start_div('form-group mb-0');
+echo html_writer::tag('label', 'Email domain', ['for' => 'id_domain', 'class' => 'd-block font-weight-bold mb-1']);
 echo html_writer::empty_tag('input', [
     'type' => 'text',
     'id' => 'id_domain',
@@ -134,17 +135,17 @@ echo html_writer::empty_tag('input', [
     'placeholder' => 'e.g. cnu.edu',
     'required' => 'required',
     'class' => 'form-control',
-    'style' => 'min-width:200px',
+    'style' => 'min-width: 220px;',
 ]);
 echo html_writer::end_div();
 
 // Cohort dropdown.
-echo html_writer::start_div('form-group');
-echo html_writer::tag('label', 'Affiliation', ['for' => 'id_cohortid', 'class' => 'd-block font-weight-bold']);
+echo html_writer::start_div('form-group mb-0');
+echo html_writer::tag('label', 'Affiliation', ['for' => 'id_cohortid', 'class' => 'd-block font-weight-bold mb-1']);
 if (empty($cohortnames)) {
     echo html_writer::tag('span', 'No AFF- cohorts available. Create one first.', ['class' => 'text-danger']);
 } else {
-    echo html_writer::select($cohortnames, 'cohortid', '', ['' => 'Choose...'], ['id' => 'id_cohortid', 'class' => 'form-control', 'required' => 'required']);
+    echo html_writer::select($cohortnames, 'cohortid', '', ['' => 'Choose...'], ['id' => 'id_cohortid', 'class' => 'form-control', 'required' => 'required', 'style' => 'min-width: 260px;']);
 }
 echo html_writer::end_div();
 
@@ -153,6 +154,7 @@ if (!empty($cohortnames)) {
     echo html_writer::tag('button', '+ Add mapping', [
         'type' => 'submit',
         'class' => 'btn btn-primary',
+        'style' => 'height: 38px;',
     ]);
 }
 
