@@ -105,12 +105,22 @@ function local_partnerapi_extend_signup_form($mform) {
     $mform->addHelpButton('local_partnerapi_affiliation', 'affiliationchoose', 'local_partnerapi');
     $mform->setType('local_partnerapi_affiliation', PARAM_INT);
 
-    // Data-sharing disclaimer (static, always shown).
+    // Data-sharing disclaimer (shown only when an affiliation is selected).
     $mform->addElement('static', 'local_partnerapi_disclaimer', '',
-        '<div class="alert alert-info mt-2" style="font-size: 0.85rem;">' .
+        '<div id="local_partnerapi_aff_disclaimer" class="alert alert-info mt-2" style="font-size: 0.85rem; display: none;">' .
         '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
         get_string('affiliation_disclaimer', 'local_partnerapi') .
-        '</div>'
+        '</div>' .
+        '<script>' .
+        '(function(){' .
+        '  var sel = document.getElementById("id_local_partnerapi_affiliation");' .
+        '  var box = document.getElementById("local_partnerapi_aff_disclaimer");' .
+        '  if(!sel||!box) return;' .
+        '  function toggle(){ box.style.display = sel.value ? "block" : "none"; }' .
+        '  sel.addEventListener("change", toggle);' .
+        '  toggle();' .
+        '})();' .
+        '</script>'
     );
 
     // Dynamic email-domain disclosure container (populated by inline JS below).
