@@ -15,17 +15,22 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version and metadata for local_partnerapi.
+ * GET /local/partnerapi/v1/quizzes?userids[]=...
+ *
+ * Returns quiz attempts for the requested users, scoped to the client's
+ * allowed cohorts.
  *
  * @package    local_partnerapi
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
+require(__DIR__ . '/../bootstrap.php');
 
-$plugin->component = 'local_partnerapi';
-$plugin->version   = 2026061405;       // YYYYMMDDXX.
-$plugin->requires  = 2022112800;       // Moodle 4.1 (LTS) or later.
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.1.0';
+use local_partnerapi\repository;
+use local_partnerapi\util;
+
+$requested = optional_param_array('userids', [], PARAM_INT);
+$scoped = repository::scope_userids($requested, $allowedcohorts);
+
+util::send_json(repository::get_quiz_attempts($scoped));

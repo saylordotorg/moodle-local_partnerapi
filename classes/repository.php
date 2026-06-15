@@ -393,6 +393,129 @@ class repository {
         return $result;
     }
 
+    /**
+     * Quiz attempts (mod_quiz) for the given (already scope-checked) user ids.
+     *
+     * Returns one row per non-preview attempt with the scaled score, the quiz
+     * max grade, and the grade-to-pass (from the quiz's grade item) so the
+     * dashboard can compute pass/fail, attempt counts, and timing.
+     *
+     * @param int[] $userids already scope-checked
+     * @return array[] list of {user_id, course_id, quiz_id, quiz_name, attempt,
+     *                 state, timestart, timefinish, score, max_score, grade_to_pass}
+     */
+    public static function get_quiz_attempts(array $userids): array {
+        global $DB;
+
+        $userids = self::clean_ids($userids);
+        if (empty($userids)) {
+            return [];
+        }
+        if (!$DB->get_manager()->table_exists('quiz_attempts')) {
+            return [];
+        }
+
+        $result = [];
+        foreach (array_chunk($userids, self::CHUNK) as $chunk) {
+            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            $rs = $DB->get_recordset_sql(
+                "SELECT qa.id, qa.userid, qa.quiz AS quizid, q.course AS courseid,
+                        q.name AS quizname, qa.attempt, qa.state, qa.timestart,
+                        qa.timefinish, qa.sumgrades, q.sumgrades AS quizsumgrades,
+                        q.grade AS quizgrade, gi.gradepass
+                   FROM {quiz_attempts} qa
+                   JOIN {quiz} q ON q.id = qa.quiz
+              LEFT JOIN {grade_items} gi
+                        ON gi.itemmodule = 'quiz' AND gi.iteminstance = q.id
+                       AND gi.courseid = q.course AND gi.itemtype = 'mod'
+                  WHERE qa.userid $uin AND qa.preview = 0 AND q.course <> :site",
+                array_merge($uparams, ['site' => self::SITE_COURSE])
+            );
+            foreach ($rs as $r) {
+                // Scale raw sumgrades onto the quiz's configured max grade.
+                $score = null;
+                if ($r->sumgrades !== null && $r->quizsumgrades !== null && (float)$r->quizsumgrades > 0) {
+                    $score = round((float)$r->sumgrades / (float)$r->quizsumgrades * (float)$r->quizgrade, 2);
+                }
+                $result[] = [
+                    'user_id'       => (int)$r->userid,
+                    'course_id'     => (int)$r->courseid,
+                    'quiz_id'       => (int)$r->quizid,
+                    'quiz_name'     => $r->quizname,
+                    'attempt'       => (int)$r->attempt,
+                    'state'         => (string)$r->state,
+                    'timestart'     => $r->timestart ? (int)$r->timestart : null,
+                    'timefinish'    => $r->timefinish ? (int)$r->timefinish : null,
+                    'score'         => $score,
+                    'max_score'     => $r->quizgrade !== null ? (float)$r->quizgrade : null,
+                    'grade_to_pass' => ($r->gradepass !== null && (float)$r->gradepass > 0) ? (float)$r->gradepass : null,
+                ];
+            }
+            $rs->close();
+        }
+
+        return $result;
+    }
+
+    /**
+     * Estimated time-on-task per (user, course), in seconds.
+     *
+     * Uses the standard "dedication" heuristic over the standard log store:
+     * consecutive events within the same course count toward time when the gap
+     * is positive and within the session window; larger gaps start a new
+     * session and are not counted.
+     *
+     * @param int[] $userids already scope-checked
+     * @return array[] list of {user_id, course_id, seconds}
+     */
+    public static function get_time_in_course(array $userids): array {
+        global $DB;
+
+        $userids = self::clean_ids($userids);
+        if (empty($userids)) {
+            return [];
+        }
+
+        // Session window: gaps longer than this start a new session (30 min).
+        $maxgap = 30 * 60;
+
+        $result = [];
+        foreach (array_chunk($userids, self::CHUNK) as $chunk) {
+            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            $rs = $DB->get_recordset_sql(
+                "SELECT l.userid, l.courseid, l.timecreated
+                   FROM {logstore_standard_log} l
+                  WHERE l.userid $uin AND l.courseid IS NOT NULL AND l.courseid <> :site
+                  ORDER BY l.userid, l.courseid, l.timecreated",
+                array_merge($uparams, ['site' => self::SITE_COURSE])
+            );
+
+            $acc = [];          // [userid][courseid] => seconds
+            $prev = null;        // [userid, courseid, timecreated]
+            foreach ($rs as $r) {
+                $uid = (int)$r->userid;
+                $cid = (int)$r->courseid;
+                $t = (int)$r->timecreated;
+                if ($prev !== null && $prev[0] === $uid && $prev[1] === $cid) {
+                    $gap = $t - $prev[2];
+                    if ($gap > 0 && $gap <= $maxgap) {
+                        $acc[$uid][$cid] = ($acc[$uid][$cid] ?? 0) + $gap;
+                    }
+                }
+                $prev = [$uid, $cid, $t];
+            }
+            $rs->close();
+
+            foreach ($acc as $uid => $courses) {
+                foreach ($courses as $cid => $secs) {
+                    $result[] = ['user_id' => $uid, 'course_id' => $cid, 'seconds' => (int)$secs];
+                }
+            }
+        }
+
+        return $result;
+    }
+
     // ----- Private helpers -------------------------------------------------
 
     /**
