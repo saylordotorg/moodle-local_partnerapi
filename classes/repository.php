@@ -335,6 +335,64 @@ class repository {
         return $out;
     }
 
+    /**
+     * Issued certificates (tool_certificate) for the given (already
+     * scope-checked) user ids.
+     *
+     * Returns an empty array when the certificate plugin is not installed,
+     * so the contract degrades gracefully on sites without it.
+     *
+     * @param int[] $userids already scope-checked
+     * @return array[] list of {id, user_id, code, template_name, course_id,
+     *                 timecreated, expires, archived, verify_url, view_url}
+     */
+    public static function get_certificates(array $userids): array {
+        global $DB;
+
+        $userids = self::clean_ids($userids);
+        if (empty($userids)) {
+            return [];
+        }
+
+        // Degrade gracefully if tool_certificate isn't present on this site.
+        if (!$DB->get_manager()->table_exists('tool_certificate_issues')) {
+            return [];
+        }
+
+        $result = [];
+        foreach (array_chunk($userids, self::CHUNK) as $chunk) {
+            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            $rows = $DB->get_recordset_sql(
+                "SELECT ci.id, ci.userid, ci.code, ci.timecreated, ci.expires,
+                        ci.courseid, ci.archived, t.name AS templatename
+                   FROM {tool_certificate_issues} ci
+                   JOIN {tool_certificate_templates} t ON t.id = ci.templateid
+                  WHERE ci.userid $uin",
+                $uparams
+            );
+            foreach ($rows as $r) {
+                $code = (string)$r->code;
+                $verifyurl = (new \moodle_url('/admin/tool/certificate/index.php', ['code' => $code]))->out(false);
+                $viewurl = (new \moodle_url('/admin/tool/certificate/view.php', ['code' => $code]))->out(false);
+                $result[] = [
+                    'id'            => (int)$r->id,
+                    'user_id'       => (int)$r->userid,
+                    'code'          => $code,
+                    'template_name' => $r->templatename,
+                    'course_id'     => $r->courseid ? (int)$r->courseid : null,
+                    'timecreated'   => $r->timecreated ? (int)$r->timecreated : null,
+                    'expires'       => $r->expires ? (int)$r->expires : null,
+                    'archived'      => (int)$r->archived === 1,
+                    'verify_url'    => $verifyurl,
+                    'view_url'      => $viewurl,
+                ];
+            }
+            $rows->close();
+        }
+
+        return $result;
+    }
+
     // ----- Private helpers -------------------------------------------------
 
     /**
