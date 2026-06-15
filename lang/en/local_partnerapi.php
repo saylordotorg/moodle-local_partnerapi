@@ -72,3 +72,8 @@ $string['domainmap'] = 'Email domain → cohort mapping (JSON)';
 $string['domainmap_desc'] = 'A JSON object mapping email domains to AFF- cohort IDs. When a user signs up or logs in with a matching email domain, they are automatically added to the specified cohort.<br><br>Example:<br><code>{"cnu.in.edu": 3, "cnu.edu": 3, "acme.org": 5}</code><br><br>Only cohorts whose idnumber starts with <code>AFF-</code> are eligible. Multiple domains can map to the same cohort.';
 
 $string['domainmap_desc_ui'] = 'Map email domains to partner affiliations. When a student signs up or logs in with a matching email domain, they are automatically added to that affiliation. Only cohorts with an AFF- identifier are available.';
+
+// Data sharing disclosures.
+$string['affiliation_disclaimer'] = 'By selecting an affiliation, you consent to sharing your course progress, grades, and activity data with that partner organization. Your partner uses this data to support your academic journey.';
+$string['domain_disclosure'] = 'Your email address ({$a->email}) is associated with <strong>{$a->partner}</strong>. Your course progress, grades, and activity data will be shared with this partner organization to support your academic journey. If you do not wish to share your data, please use a different email address to register.';
+$string['domain_disclosure_heading'] = 'Data sharing notice';

@@ -67,6 +67,11 @@ function local_partnerapi_extend_navigation(global_navigation $navigation) {
  * Add an "Affiliation" dropdown to the email signup form so new users can
  * choose their partner organization at registration time.
  *
+ * Also adds:
+ * - A data-sharing disclaimer below the dropdown.
+ * - A dynamic email-domain disclosure (rendered via JS) that warns the user
+ *   their email domain is linked to a partner.
+ *
  * Standard Moodle signup extension hook.
  *
  * @param MoodleQuickForm $mform
@@ -99,6 +104,76 @@ function local_partnerapi_extend_signup_form($mform) {
         get_string('chooseaffiliation', 'local_partnerapi'), $options);
     $mform->addHelpButton('local_partnerapi_affiliation', 'affiliationchoose', 'local_partnerapi');
     $mform->setType('local_partnerapi_affiliation', PARAM_INT);
+
+    // Data-sharing disclaimer (static, always shown).
+    $mform->addElement('static', 'local_partnerapi_disclaimer', '',
+        '<div class="alert alert-info mt-2" style="font-size: 0.85rem;">' .
+        '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
+        get_string('affiliation_disclaimer', 'local_partnerapi') .
+        '</div>'
+    );
+
+    // Dynamic email-domain disclosure container (populated by inline JS below).
+    $mform->addElement('static', 'local_partnerapi_domain_notice', '',
+        '<div id="local_partnerapi_domain_notice" style="display:none;"></div>'
+    );
+
+    // Inject JS that watches the email field and shows a disclosure if the
+    // domain matches a configured auto-affiliation domain.
+    $domainmap_json = get_config('local_partnerapi', 'domain_cohort_map');
+    $domainmap = !empty($domainmap_json) ? json_decode($domainmap_json, true) : [];
+
+    // Build a JS-friendly map: domain → partner name.
+    $domainToPartner = [];
+    foreach ($domainmap as $domain => $cohortId) {
+        $cohort = $DB->get_record('cohort', ['id' => (int) $cohortId], 'name', IGNORE_MISSING);
+        if ($cohort) {
+            $domainToPartner[strtolower($domain)] = format_string($cohort->name);
+        }
+    }
+
+    if (!empty($domainToPartner)) {
+        $jsmap = json_encode($domainToPartner, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
+        $heading = get_string('domain_disclosure_heading', 'local_partnerapi');
+        // The template uses a placeholder {PARTNER} and {EMAIL} that JS replaces.
+        $tpl = '<div class="alert alert-warning" style="font-size: 0.85rem;">' .
+               '<strong>' . $heading . ':</strong> ' .
+               'Your email address (<strong>{EMAIL}</strong>) is associated with <strong>{PARTNER}</strong>. ' .
+               'Your course progress, grades, and activity data will be shared with this partner organization to support your academic journey. ' .
+               'If you do not wish to share your data, please use a different email address to register.' .
+               '</div>';
+        $tpl = addslashes_js($tpl);
+
+        $js = <<<JS
+<script>
+(function() {
+    var map = {$jsmap};
+    var tpl = "{$tpl}";
+    var container = document.getElementById('local_partnerapi_domain_notice');
+    var emailField = document.getElementById('id_email');
+    if (!emailField || !container) return;
+
+    function check() {
+        var email = (emailField.value || '').trim().toLowerCase();
+        var at = email.indexOf('@');
+        if (at < 1) { container.style.display = 'none'; return; }
+        var domain = email.substring(at + 1);
+        if (map[domain]) {
+            container.innerHTML = tpl.replace('{PARTNER}', map[domain]).replace('{EMAIL}', email);
+            container.style.display = 'block';
+        } else {
+            container.style.display = 'none';
+        }
+    }
+
+    emailField.addEventListener('input', check);
+    emailField.addEventListener('change', check);
+    check();
+})();
+</script>
+JS;
+        $mform->addElement('static', 'local_partnerapi_domain_js', '', $js);
+    }
 }
 
 /**
@@ -180,6 +255,14 @@ function local_partnerapi_user_edit_form_definition($mform, $user) {
         get_string('affiliations', 'local_partnerapi'), $options);
     $select->setMultiple(true);
     $mform->addHelpButton('local_partnerapi_affiliations', 'affiliationchoose', 'local_partnerapi');
+
+    // Data-sharing disclaimer.
+    $mform->addElement('static', 'local_partnerapi_edit_disclaimer', '',
+        '<div class="alert alert-info mt-2" style="font-size: 0.85rem;">' .
+        '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
+        get_string('affiliation_disclaimer', 'local_partnerapi') .
+        '</div>'
+    );
 
     // Pre-select current memberships.
     if (!empty($user->id)) {
