@@ -127,7 +127,7 @@ echo html_writer::start_div('d-flex flex-wrap align-items-end', ['style' => 'gap
 
 // Domain input.
 echo html_writer::start_div('form-group mb-0');
-echo html_writer::tag('label', 'Email domain', ['for' => 'id_domain', 'class' => 'd-block font-weight-bold mb-1']);
+echo html_writer::tag('label', 'Email domain', ['for' => 'id_domain', 'class' => 'd-block font-weight-bold', 'style' => 'margin-bottom: 0.5rem;']);
 echo html_writer::empty_tag('input', [
     'type' => 'text',
     'id' => 'id_domain',
@@ -141,7 +141,7 @@ echo html_writer::end_div();
 
 // Cohort dropdown.
 echo html_writer::start_div('form-group mb-0');
-echo html_writer::tag('label', 'Affiliation', ['for' => 'id_cohortid', 'class' => 'd-block font-weight-bold mb-1']);
+echo html_writer::tag('label', 'Affiliation', ['for' => 'id_cohortid', 'class' => 'd-block font-weight-bold', 'style' => 'margin-bottom: 0.5rem;']);
 if (empty($cohortnames)) {
     echo html_writer::tag('span', 'No AFF- cohorts available. Create one first.', ['class' => 'text-danger']);
 } else {
