@@ -51,3 +51,17 @@ $string['confirmdelete'] = 'Delete the client "{$a}" and its cohort scope? Any d
 $string['noclients'] = 'No Partner API clients yet. Use "Add client" to create one.';
 $string['nocohortsselected'] = 'Select at least one cohort.';
 $string['missingcohort'] = '(deleted cohort)';
+
+// Affiliation (student profile section + self-select chooser).
+$string['affiliation'] = 'Affiliation';
+$string['affiliations'] = 'Affiliations';
+$string['affiliation_intro'] = 'Your affiliation links your Saylor activity to a partner organization. Choose your affiliation below if it is not already listed.';
+$string['youraffiliations'] = 'Your affiliations';
+$string['noaffiliation'] = 'No affiliation selected.';
+$string['chooseaffiliation'] = 'Choose your affiliation';
+$string['addaffiliation'] = 'Add affiliation';
+$string['affiliationjoined'] = 'You have been added to "{$a}".';
+$string['affiliationchoose_help'] = 'Select the organization you are affiliated with. This adds you to that partner so your progress is shared with them.';
+$string['noaffiliationsavailable'] = 'There are no affiliations available to join right now.';
+$string['affiliationalreadymember'] = 'You are already affiliated with "{$a}".';
+$string['affiliationinvalid'] = 'That affiliation is not available.';
