@@ -17,6 +17,10 @@
 /**
  * Partner client token authentication and cohort-scope resolution.
  *
+ * Security hardening:
+ * - Token lookup uses hash_equals() for constant-time comparison.
+ * - Failed attempts are rate-limited per IP (10 failures per 5 minutes).
+ *
  * @package    local_partnerapi
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -31,11 +35,20 @@ defined('MOODLE_INTERNAL') || die();
  */
 class client {
 
+    /** Maximum failed auth attempts per IP within the rate window. */
+    const RATE_LIMIT_MAX = 10;
+
+    /** Rate limit window in seconds (5 minutes). */
+    const RATE_LIMIT_WINDOW = 300;
+
     /**
      * Authenticate a presented token.
      *
+     * Uses constant-time comparison (hash_equals) to prevent timing attacks.
+     * Rate-limits failed attempts per IP address.
+     *
      * @param string $token the value sent as the wstoken parameter
-     * @return \stdClass|null the client record, or null when the token is unknown/suspended
+     * @return \stdClass|null the client record, or null when the token is unknown/suspended/rate-limited
      */
     public static function authenticate(string $token): ?\stdClass {
         global $DB;
@@ -45,8 +58,80 @@ class client {
             return null;
         }
 
-        $record = $DB->get_record('local_partnerapi_clients', ['token' => $token, 'suspended' => 0]);
-        return $record ?: null;
+        // Rate limiting: check if this IP has too many recent failures.
+        $ip = getremoteaddr();
+        if (self::is_rate_limited($ip)) {
+            return null;
+        }
+
+        // Fetch all active (non-suspended) clients and compare tokens in
+        // constant time. This prevents timing-based token enumeration.
+        // For sites with many clients, a hashed-token column would be more
+        // efficient — but with <100 clients this is fine and maximally safe.
+        $clients = $DB->get_records('local_partnerapi_clients', ['suspended' => 0]);
+
+        $matched = null;
+        foreach ($clients as $client) {
+            // hash_equals: constant-time comparison prevents timing leaks.
+            if (hash_equals($client->token, $token)) {
+                $matched = $client;
+                // Don't break — always iterate all clients for constant time.
+            }
+        }
+
+        if ($matched === null) {
+            // Record the failed attempt for rate limiting.
+            self::record_failure($ip);
+            return null;
+        }
+
+        // Successful auth — clear any failure count for this IP.
+        self::clear_failures($ip);
+        return $matched;
+    }
+
+    /**
+     * Check if the given IP is rate-limited.
+     *
+     * Uses Moodle's cache API (application-level) for persistence across
+     * requests without requiring a dedicated DB table.
+     *
+     * @param string $ip
+     * @return bool true if rate-limited (too many failures)
+     */
+    private static function is_rate_limited(string $ip): bool {
+        $cache = \cache::make('local_partnerapi', 'ratelimit');
+        $key = 'fail_' . md5($ip);
+        $data = $cache->get($key);
+        if ($data === false) {
+            return false;
+        }
+        return (int) $data >= self::RATE_LIMIT_MAX;
+    }
+
+    /**
+     * Record a failed auth attempt for the given IP.
+     *
+     * @param string $ip
+     */
+    private static function record_failure(string $ip): void {
+        $cache = \cache::make('local_partnerapi', 'ratelimit');
+        $key = 'fail_' . md5($ip);
+        $current = $cache->get($key);
+        $count = ($current === false) ? 1 : (int) $current + 1;
+        // Set with TTL via cache definition (defined in db/caches.php).
+        $cache->set($key, $count);
+    }
+
+    /**
+     * Clear failures for the given IP after a successful auth.
+     *
+     * @param string $ip
+     */
+    private static function clear_failures(string $ip): void {
+        $cache = \cache::make('local_partnerapi', 'ratelimit');
+        $key = 'fail_' . md5($ip);
+        $cache->delete($key);
     }
 
     /**

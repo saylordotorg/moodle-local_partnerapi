@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Plugin version and metadata for local_partnerapi.
+ * Cache definitions for local_partnerapi.
  *
  * @package    local_partnerapi
  * @copyright  2026 Saylor Academy
@@ -24,8 +24,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'local_partnerapi';
-$plugin->version   = 2026061409;       // YYYYMMDDXX.
-$plugin->requires  = 2022112800;       // Moodle 4.1 (LTS) or later.
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.1.0';
+$definitions = [
+    // Rate limiting cache for API token auth failures (per IP).
+    // TTL of 5 minutes = 300 seconds.
+    'ratelimit' => [
+        'mode' => cache_store::MODE_APPLICATION,
+        'simplekeys' => true,
+        'simpledata' => true,
+        'ttl' => 300, // 5 minutes — entries auto-expire after the rate window.
+    ],
+];
