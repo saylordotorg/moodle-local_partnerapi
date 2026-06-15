@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * Admin settings: register the Partner API management page in the admin tree.
+ * Event observers for local_partnerapi (auto-affiliation by email domain).
  *
  * @package    local_partnerapi
  * @copyright  2026 Saylor Academy
@@ -24,26 +24,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-if ($hassiteconfig) {
-    $ADMIN->add('server', new admin_externalpage(
-        'local_partnerapi_manage',
-        get_string('manageclients', 'local_partnerapi'),
-        new moodle_url('/local/partnerapi/manage.php'),
-        'local/partnerapi:manage'
-    ));
-
-    // Auto-affiliation settings (domain → cohort mapping).
-    $settings = new admin_settingpage(
-        'local_partnerapi_settings',
-        get_string('autoaffiliation', 'local_partnerapi')
-    );
-
-    $settings->add(new admin_setting_configtextarea(
-        'local_partnerapi/domain_cohort_map',
-        get_string('domainmap', 'local_partnerapi'),
-        get_string('domainmap_desc', 'local_partnerapi'),
-        '' // default: empty (no auto-affiliation)
-    ));
-
-    $ADMIN->add('server', $settings);
-}
+$observers = [
+    [
+        'eventname' => '\core\event\user_created',
+        'callback'  => '\local_partnerapi\observer::user_created',
+    ],
+    [
+        'eventname' => '\core\event\user_loggedin',
+        'callback'  => '\local_partnerapi\observer::user_loggedin',
+    ],
+];
