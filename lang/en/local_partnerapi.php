@@ -77,3 +77,6 @@ $string['domainmap_desc_ui'] = 'Map email domains to partner affiliations. When 
 $string['affiliation_disclaimer'] = 'By selecting an affiliation, you consent to sharing your course progress, grades, and activity data with that partner organization. Your partner uses this data to support your academic journey.';
 $string['domain_disclosure'] = 'Your email address ({$a->email}) is associated with <strong>{$a->partner}</strong>. Your course progress, grades, and activity data will be shared with this partner organization to support your academic journey. If you do not wish to share your data, please use a different email address to register.';
 $string['domain_disclosure_heading'] = 'Data sharing notice';
+
+$string['affiliationleave'] = 'Leave affiliation';
+$string['affiliationremoved'] = 'You have been removed from "{$a}".';

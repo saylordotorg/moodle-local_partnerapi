@@ -256,14 +256,14 @@ function local_partnerapi_user_edit_form_definition($mform, $user) {
         return;
     }
 
-    $options = [];
+    $options = ['' => get_string('none')]; // "None" = no affiliation
     foreach ($all as $c) {
         $options[$c->id] = format_string($c->name);
     }
 
     $select = $mform->addElement('select', 'local_partnerapi_affiliations',
         get_string('affiliations', 'local_partnerapi'), $options);
-    $select->setMultiple(true);
+    // Limit to one affiliation (single select, not multiple).
     $mform->addHelpButton('local_partnerapi_affiliations', 'affiliationchoose', 'local_partnerapi');
 
     // Data-sharing disclaimer.
@@ -274,11 +274,11 @@ function local_partnerapi_user_edit_form_definition($mform, $user) {
         '</div>'
     );
 
-    // Pre-select current memberships.
+    // Pre-select the current single affiliation (or "None").
     if (!empty($user->id)) {
         $current = local_partnerapi_user_affiliations((int) $user->id);
-        $defaults = array_map(fn($c) => $c->id, $current);
-        $mform->setDefault('local_partnerapi_affiliations', $defaults);
+        $currentId = !empty($current) ? (string) reset($current)->id : '';
+        $mform->setDefault('local_partnerapi_affiliations', $currentId);
     }
 }
 
@@ -294,11 +294,9 @@ function local_partnerapi_user_edit_form_save($user, $usernew) {
     global $DB;
     require_once(__DIR__ . '/../../cohort/lib.php');
 
-    $selected = $usernew->local_partnerapi_affiliations ?? [];
-    if (!is_array($selected)) {
-        $selected = [$selected];
-    }
-    $selected = array_map('intval', $selected);
+    $selected = $usernew->local_partnerapi_affiliations ?? '';
+    // Single select: value is a single cohort id (or empty string for "None").
+    $selectedId = (int) $selected;
     $userid = (int) ($usernew->id ?? $user->id ?? 0);
     if ($userid <= 0) {
         return;
@@ -315,18 +313,16 @@ function local_partnerapi_user_edit_form_save($user, $usernew) {
     // Current AFF- memberships.
     $current = array_map(fn($c) => (int) $c->id, local_partnerapi_user_affiliations($userid));
 
-    // Add new selections.
-    foreach ($selected as $cid) {
-        if (in_array($cid, $validIds, true) && !in_array($cid, $current, true)) {
-            cohort_add_member($cid, $userid);
+    // Remove all existing AFF- memberships (limit to 1 rule).
+    foreach ($current as $cid) {
+        if ($cid !== $selectedId) {
+            cohort_remove_member($cid, $userid);
         }
     }
 
-    // Remove deselected ones.
-    foreach ($current as $cid) {
-        if (!in_array($cid, $selected, true)) {
-            cohort_remove_member($cid, $userid);
-        }
+    // Add the selected one (if valid and not already a member).
+    if ($selectedId > 0 && in_array($selectedId, $validIds, true) && !in_array($selectedId, $current, true)) {
+        cohort_add_member($selectedId, $userid);
     }
 }
 
