@@ -60,8 +60,83 @@ function local_partnerapi_user_affiliations(int $userid): array {
  * @param global_navigation $navigation
  */
 function local_partnerapi_extend_navigation(global_navigation $navigation) {
-    // No-op: we just need the function to exist so Moodle recognizes lib.php
-    // hooks. The actual nav node is added in the myprofile callback.
+    // No-op: we just need the function to exist so Moodle recognizes lib.php hooks.
+}
+
+/**
+ * Add an "Affiliation" dropdown to the email signup form so new users can
+ * choose their partner organization at registration time.
+ *
+ * Standard Moodle signup extension hook.
+ *
+ * @param MoodleQuickForm $mform
+ */
+function local_partnerapi_extend_signup_form($mform) {
+    global $DB;
+
+    $params = ['aff' => LOCAL_PARTNERAPI_AFFILIATION_PREFIX . '%'];
+    $cohorts = $DB->get_records_sql(
+        "SELECT c.id, c.name
+           FROM {cohort} c
+          WHERE c.visible = 1 AND " . $DB->sql_like('c.idnumber', ':aff', false) . "
+       ORDER BY c.name ASC",
+        $params
+    );
+
+    if (empty($cohorts)) {
+        return; // No affiliations available — don't show the field.
+    }
+
+    $options = ['' => get_string('none')]; // default: no affiliation (optional)
+    foreach ($cohorts as $c) {
+        $options[$c->id] = format_string($c->name);
+    }
+
+    $mform->addElement('header', 'local_partnerapi_signup_header',
+        get_string('affiliation', 'local_partnerapi'));
+
+    $mform->addElement('select', 'local_partnerapi_affiliation',
+        get_string('chooseaffiliation', 'local_partnerapi'), $options);
+    $mform->addHelpButton('local_partnerapi_affiliation', 'affiliationchoose', 'local_partnerapi');
+    $mform->setType('local_partnerapi_affiliation', PARAM_INT);
+}
+
+/**
+ * Process the affiliation selection after a new account is created.
+ *
+ * Moodle calls this hook (via core_login_post_signup_requests) with the
+ * full user object after account creation. The custom form field
+ * `local_partnerapi_affiliation` is available as a property on the object
+ * because Moodle merges all form fields into the user data.
+ *
+ * @param stdClass $data the user/form data object (includes ->id and custom fields)
+ */
+function local_partnerapi_post_signup_requests($data) {
+    global $DB;
+    require_once(__DIR__ . '/../../cohort/lib.php');
+
+    $cohortid = !empty($data->local_partnerapi_affiliation)
+        ? (int) $data->local_partnerapi_affiliation
+        : 0;
+
+    if ($cohortid <= 0) {
+        return; // No selection made — this is the normal case for most students.
+    }
+
+    $userid = (int) ($data->id ?? 0);
+    if ($userid <= 0) {
+        return;
+    }
+
+    // Validate: must be a visible AFF- cohort.
+    $cohort = $DB->get_record('cohort', ['id' => $cohortid], '*', IGNORE_MISSING);
+    if (!$cohort || stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
+        return; // Invalid or non-AFF cohort — ignore silently.
+    }
+
+    if (!$DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])) {
+        cohort_add_member($cohortid, $userid);
+    }
 }
 
 /**
