@@ -70,3 +70,5 @@ $string['affiliationinvalid'] = 'That affiliation is not available.';
 $string['autoaffiliation'] = 'Auto-Affiliation';
 $string['domainmap'] = 'Email domain → cohort mapping (JSON)';
 $string['domainmap_desc'] = 'A JSON object mapping email domains to AFF- cohort IDs. When a user signs up or logs in with a matching email domain, they are automatically added to the specified cohort.<br><br>Example:<br><code>{"cnu.in.edu": 3, "cnu.edu": 3, "acme.org": 5}</code><br><br>Only cohorts whose idnumber starts with <code>AFF-</code> are eligible. Multiple domains can map to the same cohort.';
+
+$string['domainmap_desc_ui'] = 'Map email domains to partner affiliations. When a student signs up or logs in with a matching email domain, they are automatically added to that affiliation. Only cohorts with an AFF- identifier are available.';

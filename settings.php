@@ -32,18 +32,11 @@ if ($hassiteconfig) {
         'local/partnerapi:manage'
     ));
 
-    // Auto-affiliation settings (domain → cohort mapping).
-    $settings = new admin_settingpage(
-        'local_partnerapi_settings',
-        get_string('autoaffiliation', 'local_partnerapi')
-    );
-
-    $settings->add(new admin_setting_configtextarea(
-        'local_partnerapi/domain_cohort_map',
-        get_string('domainmap', 'local_partnerapi'),
-        get_string('domainmap_desc', 'local_partnerapi'),
-        '' // default: empty (no auto-affiliation)
+    // Auto-affiliation domain mapping management page.
+    $ADMIN->add('server', new admin_externalpage(
+        'local_partnerapi_domainmap',
+        get_string('autoaffiliation', 'local_partnerapi'),
+        new moodle_url('/local/partnerapi/domainmap.php'),
+        'local/partnerapi:manage'
     ));
-
-    $ADMIN->add('server', $settings);
 }
