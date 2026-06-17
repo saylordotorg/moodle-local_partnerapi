@@ -41,7 +41,7 @@
 define('NO_MOODLE_COOKIES', true);
 define('NO_DEBUG_DISPLAY', true);
 
-require(__DIR__ . '/../../../config.php');
+require(__DIR__ . '/../../../../config.php');
 require_once($CFG->dirroot . '/user/lib.php');
 require_once($CFG->dirroot . '/cohort/lib.php');
 require_once($CFG->dirroot . '/local/partnerapi/lib.php');
