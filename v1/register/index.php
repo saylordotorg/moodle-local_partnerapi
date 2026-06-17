@@ -116,9 +116,12 @@ if (!$cohort || stripos((string)$cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_
 
 $username = trim($jsonbody['username'] ?? '');
 if (empty($username)) {
-    // Auto-generate username from email (lowercase, replace @ and dots).
-    $username = strtolower(preg_replace('/[^a-z0-9]/', '', explode('@', $email)[0]));
-    // Ensure uniqueness by appending random digits if needed.
+    // Default the username to the email address so learners can sign in with
+    // the email they registered with. This works regardless of the Moodle
+    // site's 'authloginviaemail' setting and is portable across instances.
+    // Moodle allows '@', '.', '-', '_' in usernames by default.
+    $username = core_text::strtolower($email);
+    // Fall back to a suffixed variant only if that username somehow exists.
     $base = $username;
     while ($DB->record_exists('user', ['username' => $username])) {
         $username = $base . random_int(100, 9999);
