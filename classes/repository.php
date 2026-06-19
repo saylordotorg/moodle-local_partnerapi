@@ -43,28 +43,54 @@ class repository {
      * Learner profiles for the given (already scope-checked) cohort ids.
      *
      * @param int[] $cohortids
-     * @return array[] list of {id, firstname, lastname, email, lastaccess, cohort_ids}
+     * @return array[] list of {id, firstname, lastname, email, lastaccess,
+     *                 cohort_ids, affiliation_join_at, affiliation_source}
      */
     public static function get_learners(array $cohortids): array {
-        global $DB;
+        global $DB, $CFG;
+
+        // The affiliation cohort idnumber prefix lives in the plugin lib; the
+        // v1 bootstrap loads config.php but not lib.php, so require it here.
+        require_once($CFG->dirroot . '/local/partnerapi/lib.php');
 
         $cohortids = self::clean_ids($cohortids);
         if (empty($cohortids)) {
             return [];
         }
 
-        // Map userid -> [cohortid, ...] limited to the requested cohorts.
+        // Map userid -> [cohortid, ...] limited to the requested cohorts, and
+        // capture cohort_members.timeadded plus whether the cohort is a partner
+        // affiliation (idnumber starts with the AFF- prefix). The affiliation
+        // join timestamp is the earliest timeadded across the user's affiliation
+        // cohort memberships, falling back to the earliest of any requested
+        // cohort when none of them are affiliations.
         list($insql, $params) = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'co');
         $members = $DB->get_recordset_sql(
-            "SELECT cm.userid, cm.cohortid
+            "SELECT cm.id, cm.userid, cm.cohortid, cm.timeadded, c.idnumber
                FROM {cohort_members} cm
+               JOIN {cohort} c ON c.id = cm.cohortid
               WHERE cm.cohortid $insql",
             $params
         );
 
         $cohortsbyuser = [];
+        $affjoinbyuser = [];  // earliest timeadded among AFF- cohorts
+        $anyjoinbyuser = [];  // earliest timeadded among any requested cohort
         foreach ($members as $m) {
-            $cohortsbyuser[(int)$m->userid][] = (int)$m->cohortid;
+            $userid = (int)$m->userid;
+            $cohortsbyuser[$userid][] = (int)$m->cohortid;
+
+            $timeadded = $m->timeadded ? (int)$m->timeadded : null;
+            if ($timeadded !== null && $timeadded > 0) {
+                if (!isset($anyjoinbyuser[$userid]) || $timeadded < $anyjoinbyuser[$userid]) {
+                    $anyjoinbyuser[$userid] = $timeadded;
+                }
+                $isaffiliation = stripos((string)$m->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) === 0;
+                if ($isaffiliation
+                    && (!isset($affjoinbyuser[$userid]) || $timeadded < $affjoinbyuser[$userid])) {
+                    $affjoinbyuser[$userid] = $timeadded;
+                }
+            }
         }
         $members->close();
 
@@ -82,18 +108,42 @@ class repository {
                 $uparams
             );
             foreach ($users as $u) {
+                $userid = (int)$u->id;
+                $joinat = $affjoinbyuser[$userid] ?? $anyjoinbyuser[$userid] ?? null;
                 $result[] = [
-                    'id'         => (int)$u->id,
-                    'firstname'  => $u->firstname,
-                    'lastname'   => $u->lastname,
-                    'email'      => $u->email,
-                    'lastaccess' => $u->lastaccess ? (int)$u->lastaccess : null,
-                    'cohort_ids' => array_values(array_unique($cohortsbyuser[(int)$u->id] ?? [])),
+                    'id'                  => $userid,
+                    'firstname'           => $u->firstname,
+                    'lastname'            => $u->lastname,
+                    'email'               => $u->email,
+                    'lastaccess'          => $u->lastaccess ? (int)$u->lastaccess : null,
+                    'cohort_ids'          => array_values(array_unique($cohortsbyuser[$userid] ?? [])),
+                    'affiliation_join_at' => $joinat,
+                    // Source hint: core Moodle cohort membership does not record
+                    // how a learner came to be affiliated (signup choice vs.
+                    // self-service vs. domain auto-affiliation), so the precise
+                    // source is resolved downstream by the sync service. The
+                    // plugin emits null when the source is not determinable.
+                    'affiliation_source'  => self::affiliation_source_hint(),
                 ];
             }
         }
 
         return $result;
+    }
+
+    /**
+     * Best-effort affiliation source hint for the learners endpoint.
+     *
+     * Core Moodle's {cohort_members} table stores no provenance for how a
+     * membership was created, so the source is not determinable at the plugin
+     * layer. The sync service resolves the authoritative source (e.g. from the
+     * partner registration link) and never downgrades a known value. Returns
+     * null until a determinable signal exists.
+     *
+     * @return string|null
+     */
+    private static function affiliation_source_hint(): ?string {
+        return null;
     }
 
     /**
