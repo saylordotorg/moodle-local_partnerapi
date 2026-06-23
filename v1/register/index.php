@@ -188,6 +188,7 @@ if (!empty($jsonbody['customfields']) && is_array($jsonbody['customfields'])) {
 // ─── Add to cohort ───────────────────────────────────────────────────
 
 cohort_add_member($cohortid, $userid);
+\local_partnerapi\provenance::record($userid, $cohortid, \local_partnerapi\provenance::SOURCE_REGISTRATION);
 
 // ─── Return success ──────────────────────────────────────────────────
 

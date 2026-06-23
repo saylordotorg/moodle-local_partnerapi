@@ -31,6 +31,41 @@ defined('MOODLE_INTERNAL') || die();
  * @return bool
  */
 function xmldb_local_partnerapi_upgrade($oldversion) {
-    // No upgrade steps yet; install.xml defines the current schema.
+    global $CFG, $DB;
+
+    $dbman = $DB->get_manager();
+
+    if ($oldversion < 2026061800) {
+
+        // Define table local_partnerapi_provenance to be created.
+        $table = new xmldb_table('local_partnerapi_provenance');
+
+        // Fields (mirror db/install.xml exactly).
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('cohortid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('source', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL, null, null);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+
+        // Keys.
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+
+        // Indexes — UNIQUE(userid, cohortid) named useridcohortid (matches install.xml).
+        $table->add_index('useridcohortid', XMLDB_INDEX_UNIQUE, ['userid', 'cohortid']);
+
+        // Conditionally create.
+        if (!$dbman->table_exists($table)) {
+            $dbman->create_table($table);
+        }
+
+        // Idempotent backfill of determinable sources for existing members.
+        require_once($CFG->dirroot . '/local/partnerapi/lib.php');
+        local_partnerapi_run_backfill();
+
+        // Partnerapi savepoint reached.
+        upgrade_plugin_savepoint(true, 2026061800, 'local', 'partnerapi');
+    }
+
     return true;
 }

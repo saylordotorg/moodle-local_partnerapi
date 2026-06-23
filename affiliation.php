@@ -59,6 +59,7 @@ if ($join && confirm_sesskey()) {
             \core\output\notification::NOTIFY_ERROR);
     }
     cohort_add_member($cohort->id, $USER->id);
+    \local_partnerapi\provenance::record((int)$USER->id, (int)$cohort->id, \local_partnerapi\provenance::SOURCE_SELF);
     redirect($thisurl, get_string('affiliationjoined', 'local_partnerapi', format_string($cohort->name)),
         null, \core\output\notification::NOTIFY_SUCCESS);
 }

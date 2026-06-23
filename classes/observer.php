@@ -104,6 +104,7 @@ class observer {
                 // Add the user if not already a member.
                 if (!$DB->record_exists('cohort_members', ['cohortid' => $cohort->id, 'userid' => $userid])) {
                     cohort_add_member($cohort->id, $userid);
+                    provenance::record($userid, (int) $cohort->id, provenance::SOURCE_SIGNUP);
                 }
             }
         }

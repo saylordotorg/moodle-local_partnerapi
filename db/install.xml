@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/partnerapi/db" VERSION="20260614" COMMENT="Partner API client and cohort-scope tables"
+<XMLDB PATH="local/partnerapi/db" VERSION="20260618" COMMENT="Partner API client and cohort-scope tables"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -32,6 +32,22 @@
       </KEYS>
       <INDEXES>
         <INDEX NAME="clientcohort" UNIQUE="true" FIELDS="clientid, cohortid"/>
+      </INDEXES>
+    </TABLE>
+    <TABLE NAME="local_partnerapi_provenance" COMMENT="How each AFF- affiliation was established">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="cohortid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="source" TYPE="char" LENGTH="40" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="useridcohortid" UNIQUE="true" FIELDS="userid, cohortid"/>
       </INDEXES>
     </TABLE>
   </TABLES>

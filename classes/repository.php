@@ -98,6 +98,10 @@ class repository {
             return [];
         }
 
+        // Resolve authoritative affiliation source per user in one batched pass
+        // (restricted to AFF- cohorts, highest-precedence value wins).
+        $sourcesbyuser = provenance::sources_for_users(array_keys($cohortsbyuser));
+
         $result = [];
         foreach (array_chunk(array_keys($cohortsbyuser), self::CHUNK) as $chunk) {
             list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
@@ -118,32 +122,12 @@ class repository {
                     'lastaccess'          => $u->lastaccess ? (int)$u->lastaccess : null,
                     'cohort_ids'          => array_values(array_unique($cohortsbyuser[$userid] ?? [])),
                     'affiliation_join_at' => $joinat,
-                    // Source hint: core Moodle cohort membership does not record
-                    // how a learner came to be affiliated (signup choice vs.
-                    // self-service vs. domain auto-affiliation), so the precise
-                    // source is resolved downstream by the sync service. The
-                    // plugin emits null when the source is not determinable.
-                    'affiliation_source'  => self::affiliation_source_hint(),
+                    'affiliation_source'  => $sourcesbyuser[$userid] ?? null,
                 ];
             }
         }
 
         return $result;
-    }
-
-    /**
-     * Best-effort affiliation source hint for the learners endpoint.
-     *
-     * Core Moodle's {cohort_members} table stores no provenance for how a
-     * membership was created, so the source is not determinable at the plugin
-     * layer. The sync service resolves the authoritative source (e.g. from the
-     * partner registration link) and never downgrades a known value. Returns
-     * null until a determinable signal exists.
-     *
-     * @return string|null
-     */
-    private static function affiliation_source_hint(): ?string {
-        return null;
     }
 
     /**

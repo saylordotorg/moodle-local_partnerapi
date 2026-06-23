@@ -221,6 +221,7 @@ function local_partnerapi_post_signup_requests($data) {
 
     if (!$DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])) {
         cohort_add_member($cohortid, $userid);
+        \local_partnerapi\provenance::record($userid, $cohortid, \local_partnerapi\provenance::SOURCE_SIGNUP);
     }
 }
 
@@ -323,6 +324,7 @@ function local_partnerapi_user_edit_form_save($user, $usernew) {
     // Add the selected one (if valid and not already a member).
     if ($selectedId > 0 && in_array($selectedId, $validIds, true) && !in_array($selectedId, $current, true)) {
         cohort_add_member($selectedId, $userid);
+        \local_partnerapi\provenance::record($userid, $selectedId, \local_partnerapi\provenance::SOURCE_SELF);
     }
 }
 
@@ -383,4 +385,83 @@ function local_partnerapi_myprofile_navigation(
             new \moodle_url('/local/partnerapi/affiliation.php')
         ));
     }
+}
+
+/**
+ * One-time, idempotent backfill of provenance for existing AFF- cohort members
+ * whose source is determinable from the configured `domain_cohort_map`.
+ *
+ * For every configured `domain => cohortid` entry that points at an `AFF-`
+ * cohort, this finds the cohort's members whose `user.email` domain matches the
+ * configured domain (case-insensitive equality, mirroring the observer) and
+ * records `signup_partner_choice` provenance for each (Req 3.1, 3.2).
+ *
+ * Members whose source cannot be determined this way get no provenance row
+ * (Req 3.3). Idempotence and never-downgrade are guaranteed by
+ * {@see \local_partnerapi\provenance::record()} itself, so this routine adds no
+ * extra dedupe logic and is safe to run repeatedly (Req 3.4).
+ *
+ * @return int number of provenance rows recorded (for CLI/reporting)
+ */
+function local_partnerapi_run_backfill(): int {
+    global $DB;
+
+    // Defensive JSON parse — identical semantics to observer::get_domain_mappings().
+    $json = get_config('local_partnerapi', 'domain_cohort_map');
+    if (empty($json)) {
+        return 0;
+    }
+    $map = json_decode($json, true);
+    if (!is_array($map) || empty($map)) {
+        return 0;
+    }
+
+    $count = 0;
+
+    foreach ($map as $domain => $cohortid) {
+        $domain = strtolower(trim((string) $domain));
+        if ($domain === '') {
+            continue;
+        }
+        $cohortid = (int) $cohortid;
+        if ($cohortid <= 0) {
+            continue;
+        }
+
+        // Only AFF- cohorts are eligible (match observer/repository semantics).
+        $cohort = $DB->get_record('cohort', ['id' => $cohortid], 'id, idnumber');
+        if (!$cohort || stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
+            continue;
+        }
+
+        // Stream members for memory safety on large cohorts; compare the email
+        // domain in PHP for case-insensitive equality matching the observer.
+        $rs = $DB->get_recordset_sql(
+            "SELECT u.id, u.email
+               FROM {cohort_members} cm
+               JOIN {user} u ON u.id = cm.userid
+              WHERE cm.cohortid = :cohortid
+                AND u.deleted = 0",
+            ['cohortid' => $cohortid]
+        );
+        foreach ($rs as $u) {
+            $parts = explode('@', (string) $u->email);
+            if (count($parts) !== 2) {
+                continue;
+            }
+            $userdomain = strtolower(trim($parts[1]));
+            if ($userdomain !== $domain) {
+                continue; // Source not determinable for this member — leave no row.
+            }
+            \local_partnerapi\provenance::record(
+                (int) $u->id,
+                $cohortid,
+                \local_partnerapi\provenance::SOURCE_SIGNUP
+            );
+            $count++;
+        }
+        $rs->close();
+    }
+
+    return $count;
 }
