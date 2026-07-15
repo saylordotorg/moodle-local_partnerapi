@@ -80,3 +80,4 @@ $string['domain_disclosure_heading'] = 'Data sharing notice';
 
 $string['affiliationleave'] = 'Leave affiliation';
 $string['affiliationremoved'] = 'You have been removed from "{$a}".';
+$string['affiliation_confirm'] = 'You have chosen to affiliate with {$a}. Your name, email address, and learning progress will be shared with this organization. Continue with this affiliation?';

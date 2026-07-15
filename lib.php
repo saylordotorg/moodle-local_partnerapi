@@ -105,7 +105,10 @@ function local_partnerapi_extend_signup_form($mform) {
     $mform->addHelpButton('local_partnerapi_affiliation', 'affiliationchoose', 'local_partnerapi');
     $mform->setType('local_partnerapi_affiliation', PARAM_INT);
 
-    // Data-sharing disclaimer (shown only when an affiliation is selected).
+    // Data-sharing disclaimer (shown only when an affiliation is selected) and
+    // a confirmation prompt on submit so the choice is deliberate — some users
+    // were selecting a partner thinking they were "applying" to it.
+    $confirmtpl = addslashes_js(get_string('affiliation_confirm', 'local_partnerapi', '{PARTNER}'));
     $mform->addElement('static', 'local_partnerapi_disclaimer', '',
         '<div id="local_partnerapi_aff_disclaimer" class="alert alert-info mt-2" style="font-size: 0.85rem; display: none;">' .
         '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
@@ -119,6 +122,15 @@ function local_partnerapi_extend_signup_form($mform) {
         '  function toggle(){ box.style.display = sel.value ? "block" : "none"; }' .
         '  sel.addEventListener("change", toggle);' .
         '  toggle();' .
+        '  var form = sel.form;' .
+        '  if(form){' .
+        '    form.addEventListener("submit", function(e){' .
+        '      if(!sel.value) return;' .
+        '      var name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : "";' .
+        '      var msg = "' . $confirmtpl . '".replace("{PARTNER}", name);' .
+        '      if(!window.confirm(msg)){ e.preventDefault(); e.stopPropagation(); }' .
+        '    });' .
+        '  }' .
         '})();' .
         '</script>'
     );

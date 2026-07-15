@@ -139,6 +139,25 @@ if (!empty($current)) {
         $select->label = get_string('addaffiliation', 'local_partnerapi');
         echo $OUTPUT->render($select);
 
+        // The chooser auto-submits on change, so confirm the choice before it
+        // is applied — accidental picks were affiliating users instantly.
+        // Capture-phase listener runs before the auto-submit handler; an
+        // unconfirmed choice is reset and never submitted.
+        $confirmjs = addslashes_js(get_string('affiliation_confirm', 'local_partnerapi', '{PARTNER}'));
+        echo html_writer::script(
+            'document.addEventListener("change", function(e) {' .
+            '    var sel = e.target;' .
+            '    if (!sel || sel.name !== "join" || !sel.value) { return; }' .
+            '    var name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : "";' .
+            '    var msg = "' . $confirmjs . '".replace("{PARTNER}", name);' .
+            '    if (!window.confirm(msg)) {' .
+            '        e.stopPropagation();' .
+            '        e.preventDefault();' .
+            '        sel.value = "";' .
+            '    }' .
+            '}, true);'
+        );
+
         // Disclaimer (shown alongside the chooser).
         echo html_writer::tag('div',
             '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
