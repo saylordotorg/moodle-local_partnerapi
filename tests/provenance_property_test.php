@@ -160,9 +160,9 @@ final class provenance_property_test extends \basic_testcase {
     /**
      * Apply source changes to a pure in-memory record model.
      *
-     * @param array<string, string> $store Existing modeled store.
+     * @param array $store Existing modeled store.
      * @param string $key Modeled user/cohort key.
-     * @param array<int, string|null> $sources Sources to apply.
+     * @param array $sources Sources to apply.
      * @return array<string, string> Updated modeled store.
      */
     private static function apply_sequence(array $store, string $key, array $sources): array {
@@ -204,7 +204,7 @@ final class provenance_property_test extends \basic_testcase {
     /**
      * Resolve a sequence to its single strongest valid source.
      *
-     * @param array<int, string|null> $values Stored source values.
+     * @param array $values Stored source values.
      * @return string|null Resolved value.
      */
     private static function resolve(array $values): ?string {

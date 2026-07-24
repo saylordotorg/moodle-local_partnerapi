@@ -142,7 +142,7 @@ final class provenance_wiring_test extends \advanced_testcase {
      * Req 1.4 — domain auto-affiliation path (observer).
      *
      * Configure a domain_cohort_map mapping example.org to an AFF- cohort, create
-     * a user with an @example.org email, then drive the observer via a properly
+     * a user with an example.org email, then drive the observer via a properly
      * formed core user_created event (create_from_userid sets relateduserid, which
      * observer::user_created consumes). Assert the recorded source is SOURCE_SIGNUP
      * per design mapping D3.

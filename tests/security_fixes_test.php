@@ -45,7 +45,7 @@ final class security_fixes_test extends \advanced_testcase {
      * Create an affiliation cohort.
      *
      * @param string $suffix Unique idnumber suffix.
-     * @param array<string, mixed> $overrides Cohort field overrides.
+     * @param array $overrides Cohort field overrides.
      * @return stdClass Created cohort.
      */
     private function create_affiliation(string $suffix, array $overrides = []): \stdClass {

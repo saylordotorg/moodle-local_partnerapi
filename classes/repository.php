@@ -561,7 +561,7 @@ class repository {
     /**
      * Keep the earliest timestamp for a user.
      *
-     * @param array<int, int> $timestamps Timestamp map, modified in place.
+     * @param array $timestamps Timestamp map, modified in place.
      * @param int $userid User id.
      * @param int $timestamp Candidate timestamp.
      * @return void
@@ -576,10 +576,10 @@ class repository {
      * Shape one learner record for the API.
      *
      * @param stdClass $user Moodle user record.
-     * @param array<int, int[]> $cohortsbyuser Membership map.
-     * @param array<int, int> $affjoinbyuser AFF membership timestamps.
-     * @param array<int, int> $anyjoinbyuser Fallback membership timestamps.
-     * @param array<int, string> $sourcesbyuser Provenance map.
+     * @param array $cohortsbyuser Membership map.
+     * @param array $affjoinbyuser AFF membership timestamps.
+     * @param array $anyjoinbyuser Fallback membership timestamps.
+     * @param array $sourcesbyuser Provenance map.
      * @return array<string, mixed> API learner record.
      */
     private static function format_learner(
@@ -699,7 +699,7 @@ class repository {
     /**
      * Shape accumulated session time for the API.
      *
-     * @param array<int, array<int, int>> $accumulated Seconds by user and course.
+     * @param array $accumulated Seconds by user and course.
      * @return array<int, array<string, int>> API records.
      */
     private static function format_session_time(array $accumulated): array {

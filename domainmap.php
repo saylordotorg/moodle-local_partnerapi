@@ -221,7 +221,7 @@ function local_partnerapi_domainmap_load(): array {
 /**
  * Save configured domain mappings.
  *
- * @param array<string, int> $map Domain to cohort id mapping.
+ * @param array $map Domain to cohort id mapping.
  * @return void
  */
 function local_partnerapi_domainmap_save(array $map): void {
