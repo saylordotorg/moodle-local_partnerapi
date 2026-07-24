@@ -454,6 +454,7 @@ class repository {
             return [];
         }
 
+        $reviewmaxmarkssql = self::quiz_review_maxmarks_sql();
         $result = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
             [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
@@ -462,7 +463,7 @@ class repository {
                         q.name AS quizname, qa.attempt, qa.state, qa.timestart,
                         qa.timefinish, qa.sumgrades, q.sumgrades AS quizsumgrades,
                         q.grade AS quizgrade, q.timeclose, q.reviewattempt,
-                        q.reviewmarks, q.reviewmaxmarks, gi.gradepass,
+                        q.reviewmarks, {$reviewmaxmarkssql} AS reviewmaxmarks, gi.gradepass,
                         gi.hidden AS itemhidden, gg.hidden AS gradehidden
                    FROM {quiz_attempts} qa
                    JOIN {quiz} q ON q.id = qa.quiz
@@ -749,6 +750,24 @@ class repository {
             return self::REVIEW_IMMEDIATELY_AFTER;
         }
         return self::REVIEW_WHILE_OPEN;
+    }
+
+    /**
+     * Resolve the review-max-marks expression across supported Moodle schemas.
+     *
+     * Moodle 4.1 stores both mark permissions in reviewmarks. Newer versions
+     * split maximum-mark visibility into reviewmaxmarks.
+     *
+     * @return string SQL expression for maximum-mark review permissions.
+     */
+    private static function quiz_review_maxmarks_sql(): string {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        if ($dbman->field_exists(new \xmldb_table('quiz'), new \xmldb_field('reviewmaxmarks'))) {
+            return 'q.reviewmaxmarks';
+        }
+        return 'q.reviewmarks';
     }
 
     /**

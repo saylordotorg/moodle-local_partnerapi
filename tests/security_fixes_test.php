@@ -221,7 +221,13 @@ final class security_fixes_test extends \advanced_testcase {
         $DB->set_field('quiz', 'grade', 100, ['id' => $quiz->id]);
         $DB->set_field('quiz', 'reviewattempt', 0x00010, ['id' => $quiz->id]);
         $DB->set_field('quiz', 'reviewmarks', 0x00010, ['id' => $quiz->id]);
-        $DB->set_field('quiz', 'reviewmaxmarks', 0x00010, ['id' => $quiz->id]);
+        $hasreviewmaxmarks = $DB->get_manager()->field_exists(
+            new \xmldb_table('quiz'),
+            new \xmldb_field('reviewmaxmarks')
+        );
+        if ($hasreviewmaxmarks) {
+            $DB->set_field('quiz', 'reviewmaxmarks', 0x00010, ['id' => $quiz->id]);
+        }
         $DB->set_field('quiz_attempts', 'state', 'finished', ['id' => $attempt->id]);
         $DB->set_field('quiz_attempts', 'timefinish', time() - 300, ['id' => $attempt->id]);
         $DB->set_field('quiz_attempts', 'sumgrades', 5, ['id' => $attempt->id]);
@@ -230,7 +236,9 @@ final class security_fixes_test extends \advanced_testcase {
 
         $DB->set_field('quiz', 'reviewattempt', 0x00100, ['id' => $quiz->id]);
         $DB->set_field('quiz', 'reviewmarks', 0x00100, ['id' => $quiz->id]);
-        $DB->set_field('quiz', 'reviewmaxmarks', 0x00100, ['id' => $quiz->id]);
+        if ($hasreviewmaxmarks) {
+            $DB->set_field('quiz', 'reviewmaxmarks', 0x00100, ['id' => $quiz->id]);
+        }
         $released = repository::get_quiz_attempts([(int) $user->id]);
         $this->assertCount(1, $released);
         $this->assertSame(50.0, $released[0]['score']);
