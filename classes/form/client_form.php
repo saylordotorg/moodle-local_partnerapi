@@ -33,7 +33,6 @@ require_once($CFG->libdir . '/formslib.php');
  * Moodle form for creating and editing partner clients and their cohort scope.
  */
 class client_form extends \moodleform {
-
     /**
      * Form definition.
      */

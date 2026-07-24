@@ -26,7 +26,10 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+// phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- Bootstrap includes config.php.
 require(__DIR__ . '/../bootstrap.php');
+
+defined('MOODLE_INTERNAL') || die();
 
 use local_partnerapi\util;
 
@@ -34,12 +37,18 @@ global $DB;
 
 // Standard user fields (always available).
 $standard = [
-    ['name' => 'firstname', 'label' => 'First name', 'type' => 'text', 'required' => true],
-    ['name' => 'lastname', 'label' => 'Last name', 'type' => 'text', 'required' => true],
-    ['name' => 'email', 'label' => 'Email address', 'type' => 'email', 'required' => true],
-    ['name' => 'password', 'label' => 'Password', 'type' => 'password', 'required' => true],
-    ['name' => 'city', 'label' => 'City/Town', 'type' => 'text', 'required' => false],
-    ['name' => 'country', 'label' => 'Country', 'type' => 'country', 'required' => false],
+    ['name' => 'firstname', 'label' => get_string('profilefield:firstname', 'local_partnerapi'),
+        'type' => 'text', 'required' => true],
+    ['name' => 'lastname', 'label' => get_string('profilefield:lastname', 'local_partnerapi'),
+        'type' => 'text', 'required' => true],
+    ['name' => 'email', 'label' => get_string('profilefield:email', 'local_partnerapi'),
+        'type' => 'email', 'required' => true],
+    ['name' => 'password', 'label' => get_string('profilefield:password', 'local_partnerapi'),
+        'type' => 'password', 'required' => true],
+    ['name' => 'city', 'label' => get_string('profilefield:city', 'local_partnerapi'),
+        'type' => 'text', 'required' => false],
+    ['name' => 'country', 'label' => get_string('profilefield:country', 'local_partnerapi'),
+        'type' => 'country', 'required' => false],
 ];
 
 // Custom profile fields configured on this site.
@@ -49,7 +58,7 @@ foreach ($customfields as $f) {
     $custom[] = [
         'shortname' => $f->shortname,
         'name' => format_string($f->name),
-        'type' => $f->datatype, // text, menu, checkbox, textarea, datetime
+        'type' => $f->datatype, // Text, menu, checkbox, textarea, or datetime.
         'required' => (int) $f->required === 1,
         'options' => $f->datatype === 'menu' ? explode("\n", $f->param1 ?? '') : null,
     ];

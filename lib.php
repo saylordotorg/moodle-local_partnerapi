@@ -22,8 +22,6 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * The idnumber prefix that marks a cohort as a partner affiliation.
  */
@@ -54,6 +52,46 @@ function local_partnerapi_user_affiliations(int $userid): array {
 }
 
 /**
+ * Return a cohort when it is available for self-service affiliation.
+ *
+ * @param int $cohortid Cohort id to validate.
+ * @return stdClass|null The visible AFF- cohort, or null when it is not eligible.
+ */
+function local_partnerapi_get_self_service_affiliation(int $cohortid): ?stdClass {
+    global $DB;
+
+    if ($cohortid <= 0) {
+        return null;
+    }
+
+    $cohort = $DB->get_record('cohort', ['id' => $cohortid, 'visible' => 1], '*', IGNORE_MISSING);
+    if (!$cohort || stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
+        return null;
+    }
+
+    return $cohort;
+}
+
+/**
+ * Check whether the current user may edit a target user's affiliation.
+ *
+ * Learners may manage their own affiliation. Editing another user's cohort
+ * membership additionally requires Moodle's cohort assignment capability.
+ *
+ * @param int $targetuserid User whose affiliation would be changed, or 0 for a new user.
+ * @return bool Whether the current user may change the affiliation.
+ */
+function local_partnerapi_can_edit_affiliation(int $targetuserid): bool {
+    global $USER;
+
+    if ($targetuserid > 0 && (int) $USER->id === $targetuserid && !isguestuser()) {
+        return true;
+    }
+
+    return has_capability('moodle/cohort:assign', context_system::instance());
+}
+
+/**
  * Extend global navigation to register the affiliation chooser page so that
  * Moodle Workplace themes do not 404 it.
  *
@@ -61,6 +99,7 @@ function local_partnerapi_user_affiliations(int $userid): array {
  */
 function local_partnerapi_extend_navigation(global_navigation $navigation) {
     // No-op: we just need the function to exist so Moodle recognizes lib.php hooks.
+    unset($navigation);
 }
 
 /**
@@ -92,16 +131,23 @@ function local_partnerapi_extend_signup_form($mform) {
         return; // No affiliations available — don't show the field.
     }
 
-    $options = ['' => get_string('none')]; // default: no affiliation (optional)
+    $options = ['' => get_string('none')]; // Default: no affiliation (optional).
     foreach ($cohorts as $c) {
         $options[$c->id] = format_string($c->name);
     }
 
-    $mform->addElement('header', 'local_partnerapi_signup_header',
-        get_string('affiliation', 'local_partnerapi'));
+    $mform->addElement(
+        'header',
+        'local_partnerapi_signup_header',
+        get_string('affiliation', 'local_partnerapi')
+    );
 
-    $mform->addElement('select', 'local_partnerapi_affiliation',
-        get_string('chooseaffiliation', 'local_partnerapi'), $options);
+    $mform->addElement(
+        'select',
+        'local_partnerapi_affiliation',
+        get_string('chooseaffiliation', 'local_partnerapi'),
+        $options
+    );
     $mform->addHelpButton('local_partnerapi_affiliation', 'affiliationchoose', 'local_partnerapi');
     $mform->setType('local_partnerapi_affiliation', PARAM_INT);
 
@@ -109,7 +155,10 @@ function local_partnerapi_extend_signup_form($mform) {
     // a confirmation prompt on submit so the choice is deliberate — some users
     // were selecting a partner thinking they were "applying" to it.
     $confirmtpl = addslashes_js(get_string('affiliation_confirm', 'local_partnerapi', '{PARTNER}'));
-    $mform->addElement('static', 'local_partnerapi_disclaimer', '',
+    $mform->addElement(
+        'static',
+        'local_partnerapi_disclaimer',
+        '',
         '<div id="local_partnerapi_aff_disclaimer" class="alert alert-info mt-2" style="font-size: 0.85rem; display: none;">' .
         '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
         get_string('affiliation_disclaimer', 'local_partnerapi') .
@@ -135,34 +184,51 @@ function local_partnerapi_extend_signup_form($mform) {
         '</script>'
     );
 
-    // Dynamic email-domain disclosure container (populated by inline JS below).
-    $mform->addElement('static', 'local_partnerapi_domain_notice', '',
+    local_partnerapi_add_domain_disclosure($mform);
+}
+
+/**
+ * Add the signup disclosure for configured email-domain affiliations.
+ *
+ * @param MoodleQuickForm $mform Signup form.
+ * @return void
+ */
+function local_partnerapi_add_domain_disclosure($mform): void {
+    global $DB;
+
+    // Dynamic email-domain disclosure container populated by JavaScript below.
+    $mform->addElement(
+        'static',
+        'local_partnerapi_domain_notice',
+        '',
         '<div id="local_partnerapi_domain_notice" style="display:none;"></div>'
     );
 
-    // Inject JS that watches the email field and shows a disclosure if the
+    // Add JavaScript that watches the email field and shows a disclosure if the
     // domain matches a configured auto-affiliation domain.
-    $domainmap_json = get_config('local_partnerapi', 'domain_cohort_map');
-    $domainmap = !empty($domainmap_json) ? json_decode($domainmap_json, true) : [];
+    $domainmapjson = get_config('local_partnerapi', 'domain_cohort_map');
+    $domainmap = !empty($domainmapjson) ? json_decode($domainmapjson, true) : [];
 
-    // Build a JS-friendly map: domain → partner name.
-    $domainToPartner = [];
-    foreach ($domainmap as $domain => $cohortId) {
-        $cohort = $DB->get_record('cohort', ['id' => (int) $cohortId], 'name', IGNORE_MISSING);
+    // Build a JavaScript-friendly map from domain to partner name.
+    $domaintopartner = [];
+    foreach ($domainmap as $domain => $cohortid) {
+        $cohort = $DB->get_record('cohort', ['id' => (int) $cohortid], 'name', IGNORE_MISSING);
         if ($cohort) {
-            $domainToPartner[strtolower($domain)] = format_string($cohort->name);
+            $domaintopartner[strtolower($domain)] = format_string($cohort->name);
         }
     }
 
-    if (!empty($domainToPartner)) {
-        $jsmap = json_encode($domainToPartner, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
+    if (!empty($domaintopartner)) {
+        $jsmap = json_encode($domaintopartner, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
         $heading = get_string('domain_disclosure_heading', 'local_partnerapi');
-        // The template uses a placeholder {PARTNER} and {EMAIL} that JS replaces.
+        $disclosure = get_string('domain_disclosure', 'local_partnerapi', (object) [
+            'email' => '{EMAIL}',
+            'partner' => '{PARTNER}',
+        ]);
+        // The localized template contains placeholders that JavaScript replaces.
         $tpl = '<div class="alert alert-warning" style="font-size: 0.85rem;">' .
                '<strong>' . $heading . ':</strong> ' .
-               'Your email address (<strong>{EMAIL}</strong>) is associated with <strong>{PARTNER}</strong>. ' .
-               'Your course progress, grades, and activity data will be shared with this partner organization to support your academic journey. ' .
-               'If you do not wish to share your data, please use a different email address to register.' .
+               $disclosure .
                '</div>';
         $tpl = addslashes_js($tpl);
 
@@ -225,10 +291,16 @@ function local_partnerapi_post_signup_requests($data) {
         return;
     }
 
-    // Validate: must be a visible AFF- cohort.
-    $cohort = $DB->get_record('cohort', ['id' => $cohortid], '*', IGNORE_MISSING);
-    if (!$cohort || stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
-        return; // Invalid or non-AFF cohort — ignore silently.
+    $cohort = local_partnerapi_get_self_service_affiliation($cohortid);
+    if (!$cohort) {
+        return;
+    }
+
+    // An explicit signup choice replaces any domain-derived affiliation.
+    foreach (local_partnerapi_user_affiliations($userid) as $existing) {
+        if ((int) $existing->id !== $cohortid) {
+            cohort_remove_member((int) $existing->id, $userid);
+        }
     }
 
     if (!$DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])) {
@@ -250,8 +322,16 @@ function local_partnerapi_post_signup_requests($data) {
 function local_partnerapi_user_edit_form_definition($mform, $user) {
     global $DB;
 
-    $mform->addElement('header', 'local_partnerapi_affiliation_header',
-        get_string('affiliation', 'local_partnerapi'));
+    $targetuserid = (int) ($user->id ?? 0);
+    if (!local_partnerapi_can_edit_affiliation($targetuserid)) {
+        return;
+    }
+
+    $mform->addElement(
+        'header',
+        'local_partnerapi_affiliation_header',
+        get_string('affiliation', 'local_partnerapi')
+    );
 
     // Build the list of available AFF- cohorts.
     $params = ['aff' => LOCAL_PARTNERAPI_AFFILIATION_PREFIX . '%'];
@@ -264,23 +344,35 @@ function local_partnerapi_user_edit_form_definition($mform, $user) {
     );
 
     if (empty($all)) {
-        $mform->addElement('static', 'local_partnerapi_noaff', '',
-            get_string('noaffiliationsavailable', 'local_partnerapi'));
+        $mform->addElement(
+            'static',
+            'local_partnerapi_noaff',
+            '',
+            get_string('noaffiliationsavailable', 'local_partnerapi')
+        );
         return;
     }
 
-    $options = ['' => get_string('none')]; // "None" = no affiliation
+    // The "None" option means no affiliation.
+    $options = ['' => get_string('none')];
     foreach ($all as $c) {
         $options[$c->id] = format_string($c->name);
     }
 
-    $select = $mform->addElement('select', 'local_partnerapi_affiliations',
-        get_string('affiliations', 'local_partnerapi'), $options);
+    $mform->addElement(
+        'select',
+        'local_partnerapi_affiliations',
+        get_string('affiliations', 'local_partnerapi'),
+        $options
+    );
     // Limit to one affiliation (single select, not multiple).
     $mform->addHelpButton('local_partnerapi_affiliations', 'affiliationchoose', 'local_partnerapi');
 
     // Data-sharing disclaimer.
-    $mform->addElement('static', 'local_partnerapi_edit_disclaimer', '',
+    $mform->addElement(
+        'static',
+        'local_partnerapi_edit_disclaimer',
+        '',
         '<div class="alert alert-info mt-2" style="font-size: 0.85rem;">' .
         '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
         get_string('affiliation_disclaimer', 'local_partnerapi') .
@@ -290,8 +382,8 @@ function local_partnerapi_user_edit_form_definition($mform, $user) {
     // Pre-select the current single affiliation (or "None").
     if (!empty($user->id)) {
         $current = local_partnerapi_user_affiliations((int) $user->id);
-        $currentId = !empty($current) ? (string) reset($current)->id : '';
-        $mform->setDefault('local_partnerapi_affiliations', $currentId);
+        $currentid = !empty($current) ? (string) reset($current)->id : '';
+        $mform->setDefault('local_partnerapi_affiliations', $currentid);
     }
 }
 
@@ -309,34 +401,43 @@ function local_partnerapi_user_edit_form_save($user, $usernew) {
 
     $selected = $usernew->local_partnerapi_affiliations ?? '';
     // Single select: value is a single cohort id (or empty string for "None").
-    $selectedId = (int) $selected;
+    $selectedid = (int) $selected;
     $userid = (int) ($usernew->id ?? $user->id ?? 0);
     if ($userid <= 0) {
+        return;
+    }
+    if (!local_partnerapi_can_edit_affiliation($userid)) {
         return;
     }
 
     // Only operate on valid AFF- cohorts.
     $params = ['aff' => LOCAL_PARTNERAPI_AFFILIATION_PREFIX . '%'];
-    $allAff = $DB->get_fieldset_sql(
+    $allaffiliations = $DB->get_fieldset_sql(
         "SELECT c.id FROM {cohort} c WHERE c.visible = 1 AND " . $DB->sql_like('c.idnumber', ':aff', false),
         $params
     );
-    $validIds = array_map('intval', $allAff);
+    $validids = array_map('intval', $allaffiliations);
+
+    // Preserve the current membership when a crafted request submits an
+    // ineligible or hidden cohort id. An empty value intentionally removes it.
+    if ($selectedid > 0 && !in_array($selectedid, $validids, true)) {
+        return;
+    }
 
     // Current AFF- memberships.
     $current = array_map(fn($c) => (int) $c->id, local_partnerapi_user_affiliations($userid));
 
     // Remove all existing AFF- memberships (limit to 1 rule).
     foreach ($current as $cid) {
-        if ($cid !== $selectedId) {
+        if ($cid !== $selectedid) {
             cohort_remove_member($cid, $userid);
         }
     }
 
     // Add the selected one (if valid and not already a member).
-    if ($selectedId > 0 && in_array($selectedId, $validIds, true) && !in_array($selectedId, $current, true)) {
-        cohort_add_member($selectedId, $userid);
-        \local_partnerapi\provenance::record($userid, $selectedId, \local_partnerapi\provenance::SOURCE_SELF);
+    if ($selectedid > 0 && !in_array($selectedid, $current, true)) {
+        cohort_add_member($selectedid, $userid);
+        \local_partnerapi\provenance::record($userid, $selectedid, \local_partnerapi\provenance::SOURCE_SELF);
     }
 }
 
@@ -358,6 +459,9 @@ function local_partnerapi_myprofile_navigation(
     $iscurrentuser,
     $course
 ) {
+    // The callback signature includes the current course, but affiliation data is site-wide.
+    unset($course);
+
     $category = new \core_user\output\myprofile\category(
         'local_partnerapi_affiliation',
         get_string('affiliation', 'local_partnerapi'),
@@ -416,8 +520,6 @@ function local_partnerapi_myprofile_navigation(
  * @return int number of provenance rows recorded (for CLI/reporting)
  */
 function local_partnerapi_run_backfill(): int {
-    global $DB;
-
     // Defensive JSON parse — identical semantics to observer::get_domain_mappings().
     $json = get_config('local_partnerapi', 'domain_cohort_map');
     if (empty($json)) {
@@ -429,51 +531,68 @@ function local_partnerapi_run_backfill(): int {
     }
 
     $count = 0;
-
     foreach ($map as $domain => $cohortid) {
         $domain = strtolower(trim((string) $domain));
-        if ($domain === '') {
-            continue;
-        }
         $cohortid = (int) $cohortid;
-        if ($cohortid <= 0) {
-            continue;
-        }
-
-        // Only AFF- cohorts are eligible (match observer/repository semantics).
-        $cohort = $DB->get_record('cohort', ['id' => $cohortid], 'id, idnumber');
-        if (!$cohort || stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
-            continue;
-        }
-
-        // Stream members for memory safety on large cohorts; compare the email
-        // domain in PHP for case-insensitive equality matching the observer.
-        $rs = $DB->get_recordset_sql(
-            "SELECT u.id, u.email
-               FROM {cohort_members} cm
-               JOIN {user} u ON u.id = cm.userid
-              WHERE cm.cohortid = :cohortid
-                AND u.deleted = 0",
-            ['cohortid' => $cohortid]
-        );
-        foreach ($rs as $u) {
-            $parts = explode('@', (string) $u->email);
-            if (count($parts) !== 2) {
-                continue;
-            }
-            $userdomain = strtolower(trim($parts[1]));
-            if ($userdomain !== $domain) {
-                continue; // Source not determinable for this member — leave no row.
-            }
-            \local_partnerapi\provenance::record(
-                (int) $u->id,
-                $cohortid,
-                \local_partnerapi\provenance::SOURCE_SIGNUP
-            );
-            $count++;
-        }
-        $rs->close();
+        $count += local_partnerapi_backfill_mapping($domain, $cohortid);
     }
 
     return $count;
+}
+
+/**
+ * Backfill one valid domain-to-affiliation mapping.
+ *
+ * @param string $domain Normalized email domain.
+ * @param int $cohortid Mapped cohort id.
+ * @return int Number of matching members processed.
+ */
+function local_partnerapi_backfill_mapping(string $domain, int $cohortid): int {
+    global $DB;
+
+    if ($domain === '' || $cohortid <= 0) {
+        return 0;
+    }
+    $cohort = $DB->get_record('cohort', ['id' => $cohortid], 'id, idnumber');
+    if (!$cohort || stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
+        return 0;
+    }
+
+    $records = $DB->get_recordset_sql(
+        "SELECT u.id, u.email
+           FROM {cohort_members} cm
+           JOIN {user} u ON u.id = cm.userid
+          WHERE cm.cohortid = :cohortid
+            AND u.deleted = 0",
+        ['cohortid' => $cohortid]
+    );
+    $count = 0;
+    foreach ($records as $user) {
+        if (local_partnerapi_email_domain((string) $user->email) !== $domain) {
+            continue;
+        }
+        \local_partnerapi\provenance::record(
+            (int) $user->id,
+            $cohortid,
+            \local_partnerapi\provenance::SOURCE_SIGNUP
+        );
+        $count++;
+    }
+    $records->close();
+    return $count;
+}
+
+/**
+ * Extract a normalized domain from an email address.
+ *
+ * @param string $email Email address.
+ * @return string|null Normalized domain, or null for a malformed address.
+ */
+function local_partnerapi_email_domain(string $email): ?string {
+    $parts = explode('@', $email);
+    if (count($parts) !== 2) {
+        return null;
+    }
+    $domain = strtolower(trim($parts[1]));
+    return $domain === '' ? null : $domain;
 }

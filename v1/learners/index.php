@@ -22,17 +22,21 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+// phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- Bootstrap includes config.php.
 require(__DIR__ . '/../bootstrap.php');
+
+defined('MOODLE_INTERNAL') || die();
 
 use local_partnerapi\repository;
 use local_partnerapi\util;
 
-$requested = optional_param_array('cohortids', [], PARAM_INT);
+$requested = util::cohortids_from_request();
 
 // Scope: intersect the requested cohorts with the client's allowed cohorts.
 // When none are requested, default to the client's full allowed set.
 $effective = empty($requested)
     ? $allowedcohorts
     : array_values(array_intersect($requested, $allowedcohorts));
+$effective = array_slice($effective, 0, util::MAX_COHORTIDS);
 
 util::send_json(repository::get_learners($effective));

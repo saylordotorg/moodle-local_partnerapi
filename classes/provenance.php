@@ -24,8 +24,6 @@
 
 namespace local_partnerapi;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Records and resolves how a learner became affiliated with an AFF- cohort.
  *
@@ -33,7 +31,6 @@ defined('MOODLE_INTERNAL') || die();
  * > self_affiliated. A stronger source is never overwritten by a weaker one.
  */
 class provenance {
-
     /** @var int Maximum ids per IN() chunk to stay within DB bind limits. */
     const CHUNK = 1000;
 
@@ -111,8 +108,10 @@ class provenance {
         }
 
         try {
-            $existing = $DB->get_record('local_partnerapi_provenance',
-                ['userid' => $userid, 'cohortid' => $cohortid]);
+            $existing = $DB->get_record(
+                'local_partnerapi_provenance',
+                ['userid' => $userid, 'cohortid' => $cohortid]
+            );
 
             if (!$existing) {
                 $now = time();
@@ -137,8 +136,10 @@ class provenance {
             }
         } catch (\Throwable $e) {
             // Provenance is metadata and must never break the affiliation flow.
-            debugging('local_partnerapi provenance::record failed: ' . $e->getMessage(),
-                DEBUG_DEVELOPER);
+            debugging(
+                'local_partnerapi provenance::record failed: ' . $e->getMessage(),
+                DEBUG_DEVELOPER
+            );
         }
     }
 
@@ -156,8 +157,10 @@ class provenance {
     public static function get_source(int $userid, int $cohortid): ?string {
         global $DB;
 
-        $row = $DB->get_record('local_partnerapi_provenance',
-            ['userid' => $userid, 'cohortid' => $cohortid]);
+        $row = $DB->get_record(
+            'local_partnerapi_provenance',
+            ['userid' => $userid, 'cohortid' => $cohortid]
+        );
 
         if (!$row) {
             return null;
@@ -207,7 +210,7 @@ class provenance {
 
         $result = [];
         foreach (array_chunk($clean, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
             $rs = $DB->get_recordset_sql(
                 "SELECT p.id, p.userid, p.source, c.idnumber
                    FROM {local_partnerapi_provenance} p

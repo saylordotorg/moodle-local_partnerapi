@@ -50,7 +50,6 @@ require_once($CFG->dirroot . '/cohort/lib.php');
  * @covers \local_partnerapi\provenance
  */
 final class provenance_wiring_test extends \advanced_testcase {
-
     /**
      * Reset the DB after each test so dropped tables / inserted rows / config
      * never leak between tests.
@@ -125,6 +124,7 @@ final class provenance_wiring_test extends \advanced_testcase {
         $usernew->id = $user->id;
         $usernew->local_partnerapi_affiliations = $cohort->id;
 
+        $this->setUser($user);
         \local_partnerapi_user_edit_form_save($userobj, $usernew);
 
         $this->assertTrue(
@@ -232,8 +232,8 @@ final class provenance_wiring_test extends \advanced_testcase {
      * via debugging(), so it returns normally. We drive the real signup-chooser
      * path (local_partnerapi_post_signup_requests), which calls cohort_add_member()
      * BEFORE record(); we then assert (a) no exception propagated and (b) the
-     * cohort membership was still created. resetAfterTest(true) restores the
-     * dropped table after the test.
+     * cohort membership was still created. The table is recreated in a finally
+     * block because Moodle's transaction reset cannot roll back DDL.
      */
     public function test_affiliation_completes_when_provenance_recording_fails(): void {
         global $DB;
@@ -253,17 +253,46 @@ final class provenance_wiring_test extends \advanced_testcase {
         $data->id = $user->id;
         $data->local_partnerapi_affiliation = $cohort->id;
 
-        // Must NOT throw even though provenance recording will fail internally.
-        \local_partnerapi_post_signup_requests($data);
+        try {
+            // Must NOT throw even though provenance recording will fail internally.
+            \local_partnerapi_post_signup_requests($data);
 
-        // record()'s catch logs via debugging(); consume it so the harness is happy.
-        $this->assertDebuggingCalled();
+            // Consume the debugging message emitted by record()'s catch block.
+            $this->assertDebuggingCalled();
 
-        // The affiliation itself still completed (best-effort contract, Req 5.3).
-        $this->assertTrue(
-            $DB->record_exists('cohort_members', ['cohortid' => (int) $cohort->id, 'userid' => (int) $user->id]),
-            'cohort membership must be created even when provenance recording fails'
-        );
+            // The affiliation itself still completed (best-effort contract, Req 5.3).
+            $this->assertTrue(
+                $DB->record_exists('cohort_members', [
+                    'cohortid' => (int) $cohort->id,
+                    'userid' => (int) $user->id,
+                ]),
+                'cohort membership must be created even when provenance recording fails'
+            );
+        } finally {
+            self::restore_provenance_table($dbman);
+        }
+    }
+
+    /**
+     * Restore the plugin table after a deliberate DDL failure test.
+     *
+     * @param \database_manager $dbman Moodle database manager.
+     * @return void
+     */
+    private static function restore_provenance_table(\database_manager $dbman): void {
+        $table = new \xmldb_table('local_partnerapi_provenance');
+        if ($dbman->table_exists($table)) {
+            return;
+        }
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+        $table->add_field('cohortid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL);
+        $table->add_field('source', XMLDB_TYPE_CHAR, '40', null, XMLDB_NOTNULL);
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('useridcohortid', XMLDB_INDEX_UNIQUE, ['userid', 'cohortid']);
+        $dbman->create_table($table);
     }
 
     /**

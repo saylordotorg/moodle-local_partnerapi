@@ -28,13 +28,10 @@
 
 namespace local_partnerapi;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Resolves and authenticates partner API clients.
  */
 class client {
-
     /** Maximum failed auth attempts per IP within the rate window. */
     const RATE_LIMIT_MAX = 10;
 
@@ -72,7 +69,7 @@ class client {
 
         $matched = null;
         foreach ($clients as $client) {
-            // hash_equals: constant-time comparison prevents timing leaks.
+            // Constant-time comparison prevents timing leaks.
             if (hash_equals($client->token, $token)) {
                 $matched = $client;
                 // Don't break — always iterate all clients for constant time.

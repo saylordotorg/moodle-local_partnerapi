@@ -15,20 +15,27 @@
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
 /**
- * GET /local/partnerapi/v1/accesslogs?userids[]=...&since=<unix>
+ * GET /local/partnerapi/v1/accesslogs?userids[]=...&since=<unix>&until=<unix>
  *
  * @package    local_partnerapi
  * @copyright  2026 Saylor Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+// phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- Bootstrap includes config.php.
 require(__DIR__ . '/../bootstrap.php');
+
+defined('MOODLE_INTERNAL') || die();
 
 use local_partnerapi\repository;
 use local_partnerapi\util;
 
-$requested = optional_param_array('userids', [], PARAM_INT);
-$since = optional_param('since', 0, PARAM_INT);
+$requested = util::userids_from_request();
+$until = optional_param('until', time(), PARAM_INT);
+$since = optional_param('since', max(0, $until - (90 * DAYSECS)), PARAM_INT);
+if ($since < 0 || $until <= 0 || $since > $until || ($until - $since) > (366 * DAYSECS)) {
+    util::error(400, get_string('error:invalidtimerange', 'local_partnerapi'));
+}
 $scoped = repository::scope_userids($requested, $allowedcohorts);
 
-util::send_json(repository::get_accesslogs($scoped, $since));
+util::send_json(repository::get_accesslogs($scoped, $since, $until));
