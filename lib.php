@@ -159,7 +159,8 @@ function local_partnerapi_extend_signup_form($mform) {
         'static',
         'local_partnerapi_disclaimer',
         '',
-        '<div id="local_partnerapi_aff_disclaimer" class="alert alert-info mt-2" style="font-size: 0.85rem; display: none;">' .
+        '<div id="local_partnerapi_aff_disclaimer" class="alert alert-info mt-2" role="status" ' .
+        'aria-live="polite" style="font-size: 0.85rem; display: none;">' .
         '<strong>' . get_string('domain_disclosure_heading', 'local_partnerapi') . ':</strong> ' .
         get_string('affiliation_disclaimer', 'local_partnerapi') .
         '</div>' .
@@ -201,7 +202,7 @@ function local_partnerapi_add_domain_disclosure($mform): void {
         'static',
         'local_partnerapi_domain_notice',
         '',
-        '<div id="local_partnerapi_domain_notice" style="display:none;"></div>'
+        '<div id="local_partnerapi_domain_notice" role="status" aria-live="polite" style="display:none;"></div>'
     );
 
     // Add JavaScript that watches the email field and shows a disclosure if the
@@ -219,38 +220,60 @@ function local_partnerapi_add_domain_disclosure($mform): void {
     }
 
     if (!empty($domaintopartner)) {
-        $jsmap = json_encode($domaintopartner, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG);
+        $jsoptions = JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
+        $jsmap = json_encode($domaintopartner, $jsoptions);
         $heading = get_string('domain_disclosure_heading', 'local_partnerapi');
         $disclosure = get_string('domain_disclosure', 'local_partnerapi', (object) [
             'email' => '{EMAIL}',
             'partner' => '{PARTNER}',
         ]);
-        // The localized template contains placeholders that JavaScript replaces.
-        $tpl = '<div class="alert alert-warning" style="font-size: 0.85rem;">' .
-               '<strong>' . $heading . ':</strong> ' .
-               $disclosure .
-               '</div>';
-        $tpl = addslashes_js($tpl);
+        $jsheading = json_encode($heading, $jsoptions);
+        $jsdisclosure = json_encode($disclosure, $jsoptions);
 
         $js = <<<JS
 <script>
 (function() {
     var map = {$jsmap};
-    var tpl = "{$tpl}";
+    var heading = {$jsheading};
+    var disclosure = {$jsdisclosure};
     var container = document.getElementById('local_partnerapi_domain_notice');
     var emailField = document.getElementById('id_email');
     if (!emailField || !container) return;
 
+    function clearNotice() {
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+    }
+
+    function hideNotice() {
+        clearNotice();
+        container.style.display = 'none';
+    }
+
+    function showNotice(email, partner) {
+        clearNotice();
+        var notice = document.createElement('div');
+        notice.className = 'alert alert-warning';
+        notice.style.fontSize = '0.85rem';
+        var title = document.createElement('strong');
+        title.textContent = heading + ':';
+        notice.appendChild(title);
+        var message = disclosure.replace('{PARTNER}', partner).replace('{EMAIL}', email);
+        notice.appendChild(document.createTextNode(' ' + message));
+        container.appendChild(notice);
+        container.style.display = 'block';
+    }
+
     function check() {
         var email = (emailField.value || '').trim().toLowerCase();
         var at = email.indexOf('@');
-        if (at < 1) { container.style.display = 'none'; return; }
+        if (at < 1) { hideNotice(); return; }
         var domain = email.substring(at + 1);
-        if (map[domain]) {
-            container.innerHTML = tpl.replace('{PARTNER}', map[domain]).replace('{EMAIL}', email);
-            container.style.display = 'block';
+        if (Object.prototype.hasOwnProperty.call(map, domain)) {
+            showNotice(email, map[domain]);
         } else {
-            container.style.display = 'none';
+            hideNotice();
         }
     }
 
