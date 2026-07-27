@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
 
+// phpcs:disable moodle.Commenting.ValidTags.Invalid -- PHPMD suppression tag.
 /**
  * Data access for the Partner API. All reads are cohort/user scoped by the caller.
  *
@@ -24,13 +25,17 @@
 
 namespace local_partnerapi;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Read-only queries against Moodle core tables, shaped to the dashboard contract.
+ *
+ * The class intentionally keeps the endpoint query contract in one stateless
+ * boundary. Each complex query path is decomposed into focused helper methods,
+ * so the aggregate class metric is not representative of a single code path.
+ *
+ * @SuppressWarnings(PHPMD.ExcessiveClassComplexity)
  */
 class repository {
-
+    // phpcs:enable moodle.Commenting.ValidTags.Invalid
     /** @var int Maximum ids per IN() chunk to stay within DB bind limits. */
     const CHUNK = 1000;
 
@@ -38,6 +43,18 @@ class repository {
      * Site course id (course 1) is excluded from learner-facing results.
      */
     const SITE_COURSE = 1;
+
+    /** @var int Quiz review bit for an in-progress attempt. */
+    private const REVIEW_DURING = 0x10000;
+
+    /** @var int Quiz review bit for the first two minutes after submission. */
+    private const REVIEW_IMMEDIATELY_AFTER = 0x01000;
+
+    /** @var int Quiz review bit while the quiz remains open. */
+    private const REVIEW_WHILE_OPEN = 0x00100;
+
+    /** @var int Quiz review bit after the quiz closes. */
+    private const REVIEW_AFTER_CLOSE = 0x00010;
 
     /**
      * Learner profiles for the given (already scope-checked) cohort ids.
@@ -64,7 +81,7 @@ class repository {
         // join timestamp is the earliest timeadded across the user's affiliation
         // cohort memberships, falling back to the earliest of any requested
         // cohort when none of them are affiliations.
-        list($insql, $params) = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'co');
+        [$insql, $params] = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'co');
         $members = $DB->get_recordset_sql(
             "SELECT cm.id, cm.userid, cm.cohortid, cm.timeadded, c.idnumber
                FROM {cohort_members} cm
@@ -73,25 +90,7 @@ class repository {
             $params
         );
 
-        $cohortsbyuser = [];
-        $affjoinbyuser = [];  // earliest timeadded among AFF- cohorts
-        $anyjoinbyuser = [];  // earliest timeadded among any requested cohort
-        foreach ($members as $m) {
-            $userid = (int)$m->userid;
-            $cohortsbyuser[$userid][] = (int)$m->cohortid;
-
-            $timeadded = $m->timeadded ? (int)$m->timeadded : null;
-            if ($timeadded !== null && $timeadded > 0) {
-                if (!isset($anyjoinbyuser[$userid]) || $timeadded < $anyjoinbyuser[$userid]) {
-                    $anyjoinbyuser[$userid] = $timeadded;
-                }
-                $isaffiliation = stripos((string)$m->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) === 0;
-                if ($isaffiliation
-                    && (!isset($affjoinbyuser[$userid]) || $timeadded < $affjoinbyuser[$userid])) {
-                    $affjoinbyuser[$userid] = $timeadded;
-                }
-            }
-        }
+        [$cohortsbyuser, $affjoinbyuser, $anyjoinbyuser] = self::index_memberships($members);
         $members->close();
 
         if (empty($cohortsbyuser)) {
@@ -104,7 +103,7 @@ class repository {
 
         $result = [];
         foreach (array_chunk(array_keys($cohortsbyuser), self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
             $users = $DB->get_records_sql(
                 "SELECT u.id, u.firstname, u.lastname, u.email, u.lastaccess
                    FROM {user} u
@@ -112,18 +111,13 @@ class repository {
                 $uparams
             );
             foreach ($users as $u) {
-                $userid = (int)$u->id;
-                $joinat = $affjoinbyuser[$userid] ?? $anyjoinbyuser[$userid] ?? null;
-                $result[] = [
-                    'id'                  => $userid,
-                    'firstname'           => $u->firstname,
-                    'lastname'            => $u->lastname,
-                    'email'               => $u->email,
-                    'lastaccess'          => $u->lastaccess ? (int)$u->lastaccess : null,
-                    'cohort_ids'          => array_values(array_unique($cohortsbyuser[$userid] ?? [])),
-                    'affiliation_join_at' => $joinat,
-                    'affiliation_source'  => $sourcesbyuser[$userid] ?? null,
-                ];
+                $result[] = self::format_learner(
+                    $u,
+                    $cohortsbyuser,
+                    $affjoinbyuser,
+                    $anyjoinbyuser,
+                    $sourcesbyuser
+                );
             }
         }
 
@@ -147,10 +141,10 @@ class repository {
             return [];
         }
 
-        list($cin, $cparams) = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'c');
+        [$cin, $cparams] = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'c');
         $allowed = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
             $rows = $DB->get_fieldset_sql(
                 "SELECT DISTINCT cm.userid
                    FROM {cohort_members} cm
@@ -181,7 +175,7 @@ class repository {
 
         $result = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
 
             // Distinct (user, course) enrolments. Use a recordset and build a
             // plain list: get_records_sql keys rows by the first column (userid)
@@ -271,14 +265,20 @@ class repository {
 
         $result = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
             $rows = $DB->get_recordset_sql(
                 "SELECT gg.id, gg.userid, gi.courseid, gi.itemname, gi.itemtype, gi.itemmodule,
                         gg.finalgrade, gi.grademax, gg.timemodified
                    FROM {grade_grades} gg
                    JOIN {grade_items} gi ON gi.id = gg.itemid
-                  WHERE gg.userid $uin AND gi.courseid <> :site",
-                array_merge($uparams, ['site' => self::SITE_COURSE])
+                  WHERE gg.userid $uin AND gi.courseid <> :site
+                    AND (gi.hidden = 0 OR (gi.hidden > 1 AND gi.hidden <= :itemnow))
+                    AND (gg.hidden = 0 OR (gg.hidden > 1 AND gg.hidden <= :gradenow))",
+                array_merge($uparams, [
+                    'site' => self::SITE_COURSE,
+                    'itemnow' => time(),
+                    'gradenow' => time(),
+                ])
             );
             foreach ($rows as $g) {
                 $result[] = [
@@ -300,10 +300,11 @@ class repository {
      * Daily access counts per user from the standard log store.
      *
      * @param int[] $userids already scope-checked
-     * @param int $since unix timestamp; only entries at/after this are counted (0 = all)
+     * @param int $since Inclusive lower log timestamp bound.
+     * @param int $until Inclusive upper log timestamp bound.
      * @return array[] list of {user_id, access_date (YYYY-MM-DD), access_count}
      */
-    public static function get_accesslogs(array $userids, int $since = 0): array {
+    public static function get_accesslogs(array $userids, int $since, int $until): array {
         global $DB;
 
         $userids = self::clean_ids($userids);
@@ -313,13 +314,16 @@ class repository {
 
         $result = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
-            $params = array_merge($uparams, ['since' => max(0, $since)]);
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            $params = array_merge($uparams, [
+                'since' => max(0, $since),
+                'until' => $until,
+            ]);
             // Group by integer day number (UTC) so it is portable across MySQL/Postgres.
             $rows = $DB->get_recordset_sql(
                 "SELECT l.userid, FLOOR(l.timecreated / 86400) AS dayno, COUNT(*) AS cnt
                    FROM {logstore_standard_log} l
-                  WHERE l.userid $uin AND l.timecreated >= :since
+                  WHERE l.userid $uin AND l.timecreated >= :since AND l.timecreated <= :until
                   GROUP BY l.userid, FLOOR(l.timecreated / 86400)",
                 $params
             );
@@ -350,7 +354,7 @@ class repository {
             return [];
         }
 
-        list($insql, $params) = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'c');
+        [$insql, $params] = $DB->get_in_or_equal($cohortids, SQL_PARAMS_NAMED, 'c');
         $rows = $DB->get_records_sql(
             "SELECT id, name, idnumber
                FROM {cohort}
@@ -395,7 +399,7 @@ class repository {
 
         $result = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
             $rows = $DB->get_recordset_sql(
                 "SELECT ci.id, ci.userid, ci.code, ci.timecreated, ci.expires,
                         ci.courseid, ci.archived, t.name AS templatename
@@ -432,7 +436,8 @@ class repository {
      *
      * Returns one row per non-preview attempt with the scaled score, the quiz
      * max grade, and the grade-to-pass (from the quiz's grade item) so the
-     * dashboard can compute pass/fail, attempt counts, and timing.
+     * dashboard can compute pass/fail, attempt counts, and timing. Moodle's
+     * grade visibility and quiz review timing are enforced before release.
      *
      * @param int[] $userids already scope-checked
      * @return array[] list of {user_id, course_id, quiz_id, quiz_name, attempt,
@@ -449,41 +454,32 @@ class repository {
             return [];
         }
 
+        $reviewmaxmarkssql = self::quiz_review_maxmarks_sql();
         $result = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
             $rs = $DB->get_recordset_sql(
                 "SELECT qa.id, qa.userid, qa.quiz AS quizid, q.course AS courseid,
                         q.name AS quizname, qa.attempt, qa.state, qa.timestart,
                         qa.timefinish, qa.sumgrades, q.sumgrades AS quizsumgrades,
-                        q.grade AS quizgrade, gi.gradepass
+                        q.grade AS quizgrade, q.timeclose, q.reviewattempt,
+                        q.reviewmarks, {$reviewmaxmarkssql} AS reviewmaxmarks, gi.gradepass,
+                        gi.hidden AS itemhidden, gg.hidden AS gradehidden
                    FROM {quiz_attempts} qa
                    JOIN {quiz} q ON q.id = qa.quiz
               LEFT JOIN {grade_items} gi
                         ON gi.itemmodule = 'quiz' AND gi.iteminstance = q.id
-                       AND gi.courseid = q.course AND gi.itemtype = 'mod'
+                        AND gi.courseid = q.course AND gi.itemtype = 'mod'
+              LEFT JOIN {grade_grades} gg
+                        ON gg.itemid = gi.id AND gg.userid = qa.userid
                   WHERE qa.userid $uin AND qa.preview = 0 AND q.course <> :site",
                 array_merge($uparams, ['site' => self::SITE_COURSE])
             );
             foreach ($rs as $r) {
-                // Scale raw sumgrades onto the quiz's configured max grade.
-                $score = null;
-                if ($r->sumgrades !== null && $r->quizsumgrades !== null && (float)$r->quizsumgrades > 0) {
-                    $score = round((float)$r->sumgrades / (float)$r->quizsumgrades * (float)$r->quizgrade, 2);
+                $attempt = self::format_quiz_attempt($r, time());
+                if ($attempt !== null) {
+                    $result[] = $attempt;
                 }
-                $result[] = [
-                    'user_id'       => (int)$r->userid,
-                    'course_id'     => (int)$r->courseid,
-                    'quiz_id'       => (int)$r->quizid,
-                    'quiz_name'     => $r->quizname,
-                    'attempt'       => (int)$r->attempt,
-                    'state'         => (string)$r->state,
-                    'timestart'     => $r->timestart ? (int)$r->timestart : null,
-                    'timefinish'    => $r->timefinish ? (int)$r->timefinish : null,
-                    'score'         => $score,
-                    'max_score'     => $r->quizgrade !== null ? (float)$r->quizgrade : null,
-                    'grade_to_pass' => ($r->gradepass !== null && (float)$r->gradepass > 0) ? (float)$r->gradepass : null,
-                ];
             }
             $rs->close();
         }
@@ -500,9 +496,11 @@ class repository {
      * session and are not counted.
      *
      * @param int[] $userids already scope-checked
+     * @param int $since Inclusive lower log timestamp bound.
+     * @param int $until Inclusive upper log timestamp bound.
      * @return array[] list of {user_id, course_id, seconds}
      */
-    public static function get_time_in_course(array $userids): array {
+    public static function get_time_in_course(array $userids, int $since, int $until): array {
         global $DB;
 
         $userids = self::clean_ids($userids);
@@ -510,47 +508,267 @@ class repository {
             return [];
         }
 
-        // Session window: gaps longer than this start a new session (30 min).
-        $maxgap = 30 * 60;
-
         $result = [];
         foreach (array_chunk($userids, self::CHUNK) as $chunk) {
-            list($uin, $uparams) = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
+            [$uin, $uparams] = $DB->get_in_or_equal($chunk, SQL_PARAMS_NAMED, 'u');
             $rs = $DB->get_recordset_sql(
                 "SELECT l.userid, l.courseid, l.timecreated
                    FROM {logstore_standard_log} l
                   WHERE l.userid $uin AND l.courseid IS NOT NULL AND l.courseid <> :site
-                  ORDER BY l.userid, l.courseid, l.timecreated",
-                array_merge($uparams, ['site' => self::SITE_COURSE])
+                    AND l.timecreated >= :since AND l.timecreated <= :until
+                   ORDER BY l.userid, l.courseid, l.timecreated",
+                array_merge($uparams, [
+                    'site' => self::SITE_COURSE,
+                    'since' => $since,
+                    'until' => $until,
+                ])
             );
 
-            $acc = [];          // [userid][courseid] => seconds
-            $prev = null;        // [userid, courseid, timecreated]
-            foreach ($rs as $r) {
-                $uid = (int)$r->userid;
-                $cid = (int)$r->courseid;
-                $t = (int)$r->timecreated;
-                if ($prev !== null && $prev[0] === $uid && $prev[1] === $cid) {
-                    $gap = $t - $prev[2];
-                    if ($gap > 0 && $gap <= $maxgap) {
-                        $acc[$uid][$cid] = ($acc[$uid][$cid] ?? 0) + $gap;
-                    }
-                }
-                $prev = [$uid, $cid, $t];
-            }
+            $acc = self::accumulate_session_time($rs);
             $rs->close();
-
-            foreach ($acc as $uid => $courses) {
-                foreach ($courses as $cid => $secs) {
-                    $result[] = ['user_id' => $uid, 'course_id' => $cid, 'seconds' => (int)$secs];
-                }
-            }
+            array_push($result, ...self::format_session_time($acc));
         }
 
         return $result;
     }
 
-    // ----- Private helpers -------------------------------------------------
+    // Private helpers.
+
+    /**
+     * Index cohort membership rows by user and earliest membership time.
+     *
+     * @param \moodle_recordset $members Membership rows.
+     * @return array{0: array, 1: array, 2: array} Cohorts, AFF times, and fallback times.
+     */
+    private static function index_memberships(\moodle_recordset $members): array {
+        $cohortsbyuser = [];
+        $affjoinbyuser = [];
+        $anyjoinbyuser = [];
+        foreach ($members as $member) {
+            $userid = (int) $member->userid;
+            $cohortsbyuser[$userid][] = (int) $member->cohortid;
+            $timeadded = (int) $member->timeadded;
+            if ($timeadded <= 0) {
+                continue;
+            }
+            self::keep_earliest($anyjoinbyuser, $userid, $timeadded);
+            if (stripos((string) $member->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) === 0) {
+                self::keep_earliest($affjoinbyuser, $userid, $timeadded);
+            }
+        }
+        return [$cohortsbyuser, $affjoinbyuser, $anyjoinbyuser];
+    }
+
+    /**
+     * Keep the earliest timestamp for a user.
+     *
+     * @param array $timestamps Timestamp map, modified in place.
+     * @param int $userid User id.
+     * @param int $timestamp Candidate timestamp.
+     * @return void
+     */
+    private static function keep_earliest(array &$timestamps, int $userid, int $timestamp): void {
+        if (!isset($timestamps[$userid]) || $timestamp < $timestamps[$userid]) {
+            $timestamps[$userid] = $timestamp;
+        }
+    }
+
+    /**
+     * Shape one learner record for the API.
+     *
+     * @param stdClass $user Moodle user record.
+     * @param array $cohortsbyuser Membership map.
+     * @param array $affjoinbyuser AFF membership timestamps.
+     * @param array $anyjoinbyuser Fallback membership timestamps.
+     * @param array $sourcesbyuser Provenance map.
+     * @return array<string, mixed> API learner record.
+     */
+    private static function format_learner(
+        \stdClass $user,
+        array $cohortsbyuser,
+        array $affjoinbyuser,
+        array $anyjoinbyuser,
+        array $sourcesbyuser
+    ): array {
+        $userid = (int) $user->id;
+        return [
+            'id' => $userid,
+            'firstname' => $user->firstname,
+            'lastname' => $user->lastname,
+            'email' => $user->email,
+            'lastaccess' => $user->lastaccess ? (int) $user->lastaccess : null,
+            'cohort_ids' => array_values(array_unique($cohortsbyuser[$userid] ?? [])),
+            'affiliation_join_at' => $affjoinbyuser[$userid] ?? $anyjoinbyuser[$userid] ?? null,
+            'affiliation_source' => $sourcesbyuser[$userid] ?? null,
+        ];
+    }
+
+    /**
+     * Release and shape one quiz attempt according to Moodle's review policy.
+     *
+     * @param stdClass $attempt Joined quiz-attempt record.
+     * @param int $now Current timestamp.
+     * @return array<string, mixed>|null Released record, or null when withheld.
+     */
+    private static function format_quiz_attempt(\stdClass $attempt, int $now): ?array {
+        if (!self::visibility_is_released($attempt->itemhidden, $now)) {
+            return null;
+        }
+        if (!self::visibility_is_released($attempt->gradehidden, $now)) {
+            return null;
+        }
+
+        $phase = self::quiz_review_phase($attempt, $now);
+        if (((int) $attempt->reviewattempt & $phase) === 0) {
+            return null;
+        }
+        $marksreleased = ((int) $attempt->reviewmarks & $phase) !== 0;
+        $maxreleased = ((int) $attempt->reviewmaxmarks & $phase) !== 0;
+
+        return [
+            'user_id' => (int) $attempt->userid,
+            'course_id' => (int) $attempt->courseid,
+            'quiz_id' => (int) $attempt->quizid,
+            'quiz_name' => $attempt->quizname,
+            'attempt' => (int) $attempt->attempt,
+            'state' => (string) $attempt->state,
+            'timestart' => $attempt->timestart ? (int) $attempt->timestart : null,
+            'timefinish' => $attempt->timefinish ? (int) $attempt->timefinish : null,
+            'score' => self::released_quiz_score($attempt, $marksreleased),
+            'max_score' => $maxreleased && $attempt->quizgrade !== null ? (float) $attempt->quizgrade : null,
+            'grade_to_pass' => self::released_grade_to_pass($attempt, $marksreleased),
+        ];
+    }
+
+    /**
+     * Scale a released raw quiz mark.
+     *
+     * @param stdClass $attempt Joined attempt record.
+     * @param bool $released Whether marks may be reviewed.
+     * @return float|null Released scaled score.
+     */
+    private static function released_quiz_score(\stdClass $attempt, bool $released): ?float {
+        if (!$released || $attempt->sumgrades === null || $attempt->quizsumgrades === null) {
+            return null;
+        }
+        if ((float) $attempt->quizsumgrades <= 0) {
+            return null;
+        }
+        return round(
+            (float) $attempt->sumgrades / (float) $attempt->quizsumgrades * (float) $attempt->quizgrade,
+            2
+        );
+    }
+
+    /**
+     * Return a released grade-to-pass value.
+     *
+     * @param stdClass $attempt Joined attempt record.
+     * @param bool $released Whether marks may be reviewed.
+     * @return float|null Released threshold.
+     */
+    private static function released_grade_to_pass(\stdClass $attempt, bool $released): ?float {
+        if (!$released || $attempt->gradepass === null || (float) $attempt->gradepass <= 0) {
+            return null;
+        }
+        return (float) $attempt->gradepass;
+    }
+
+    /**
+     * Accumulate session gaps from an ordered log recordset.
+     *
+     * @param \moodle_recordset $records Ordered standard-log rows.
+     * @return array<int, array<int, int>> Seconds by user and course.
+     */
+    private static function accumulate_session_time(\moodle_recordset $records): array {
+        $accumulated = [];
+        $previous = null;
+        foreach ($records as $record) {
+            $current = [(int) $record->userid, (int) $record->courseid, (int) $record->timecreated];
+            if ($previous !== null && $previous[0] === $current[0] && $previous[1] === $current[1]) {
+                $gap = $current[2] - $previous[2];
+                if ($gap > 0 && $gap <= (30 * MINSECS)) {
+                    $accumulated[$current[0]][$current[1]] =
+                        ($accumulated[$current[0]][$current[1]] ?? 0) + $gap;
+                }
+            }
+            $previous = $current;
+        }
+        return $accumulated;
+    }
+
+    /**
+     * Shape accumulated session time for the API.
+     *
+     * @param array $accumulated Seconds by user and course.
+     * @return array<int, array<string, int>> API records.
+     */
+    private static function format_session_time(array $accumulated): array {
+        $result = [];
+        foreach ($accumulated as $userid => $courses) {
+            foreach ($courses as $courseid => $seconds) {
+                $result[] = [
+                    'user_id' => $userid,
+                    'course_id' => $courseid,
+                    'seconds' => (int) $seconds,
+                ];
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Check Moodle's hidden-value semantics.
+     *
+     * A value of 1 is hidden indefinitely. Values greater than 1 are release
+     * timestamps and become visible once that time has passed.
+     *
+     * @param int|string|null $hidden Moodle hidden flag or timestamp.
+     * @param int $now Current timestamp.
+     * @return bool Whether the value is released.
+     */
+    private static function visibility_is_released($hidden, int $now): bool {
+        $hidden = (int) $hidden;
+        return $hidden === 0 || ($hidden > 1 && $hidden <= $now);
+    }
+
+    /**
+     * Resolve the active Moodle quiz review period for an attempt.
+     *
+     * @param stdClass $attempt Joined quiz-attempt record.
+     * @param int $now Current timestamp.
+     * @return int One of the REVIEW_* bit constants.
+     */
+    private static function quiz_review_phase(\stdClass $attempt, int $now): int {
+        if ($attempt->state === 'inprogress') {
+            return self::REVIEW_DURING;
+        }
+        if ((int) $attempt->timeclose > 0 && $now >= (int) $attempt->timeclose) {
+            return self::REVIEW_AFTER_CLOSE;
+        }
+        if ($now < (int) $attempt->timefinish + 120) {
+            return self::REVIEW_IMMEDIATELY_AFTER;
+        }
+        return self::REVIEW_WHILE_OPEN;
+    }
+
+    /**
+     * Resolve the review-max-marks expression across supported Moodle schemas.
+     *
+     * Moodle 4.1 stores both mark permissions in reviewmarks. Newer versions
+     * split maximum-mark visibility into reviewmaxmarks.
+     *
+     * @return string SQL expression for maximum-mark review permissions.
+     */
+    private static function quiz_review_maxmarks_sql(): string {
+        global $DB;
+
+        $dbman = $DB->get_manager();
+        if ($dbman->field_exists(new \xmldb_table('quiz'), new \xmldb_field('reviewmaxmarks'))) {
+            return 'q.reviewmaxmarks';
+        }
+        return 'q.reviewmarks';
+    }
 
     /**
      * Count of completion-tracked activities per course.
@@ -563,7 +781,7 @@ class repository {
         if (empty($courseids)) {
             return [];
         }
-        list($cin, $params) = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, 'c');
+        [$cin, $params] = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, 'c');
         $rows = $DB->get_records_sql(
             "SELECT cm.course AS courseid, COUNT(*) AS cnt
                FROM {course_modules} cm
@@ -590,8 +808,8 @@ class repository {
         if (empty($userids) || empty($courseids)) {
             return [];
         }
-        list($uin, $uparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'u');
-        list($cin, $cparams) = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, 'c');
+        [$uin, $uparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'u');
+        [$cin, $cparams] = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, 'c');
         $rows = $DB->get_recordset_sql(
             "SELECT cm.course AS courseid, cmc.userid, COUNT(*) AS cnt
                FROM {course_modules_completion} cmc
@@ -621,8 +839,8 @@ class repository {
         if (empty($userids) || empty($courseids)) {
             return [];
         }
-        list($uin, $uparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'u');
-        list($cin, $cparams) = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, 'c');
+        [$uin, $uparams] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'u');
+        [$cin, $cparams] = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, 'c');
         $rows = $DB->get_recordset_sql(
             "SELECT cc.userid, cc.course AS courseid, cc.timecompleted
                FROM {course_completions} cc

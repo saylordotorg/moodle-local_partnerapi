@@ -22,8 +22,6 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Upgrade the plugin schema.
  *
@@ -36,7 +34,6 @@ function xmldb_local_partnerapi_upgrade($oldversion) {
     $dbman = $DB->get_manager();
 
     if ($oldversion < 2026061800) {
-
         // Define table local_partnerapi_provenance to be created.
         $table = new xmldb_table('local_partnerapi_provenance');
 
@@ -65,6 +62,11 @@ function xmldb_local_partnerapi_upgrade($oldversion) {
 
         // Partnerapi savepoint reached.
         upgrade_plugin_savepoint(true, 2026061800, 'local', 'partnerapi');
+    }
+
+    if ($oldversion < 2026072400) {
+        // Security and Privacy API release; no schema changes are required.
+        upgrade_plugin_savepoint(true, 2026072400, 'local', 'partnerapi');
     }
 
     return true;

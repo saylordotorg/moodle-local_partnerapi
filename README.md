@@ -1,43 +1,57 @@
-# local_partnerapi — Moodle Partner API plugin
+# local_partnerapi - Moodle Partner API plugin
 
-A Moodle **local** plugin that exposes a small, read-only, cohort-scoped REST
-API consumed by the Saylor Partner Dashboard's sync service. It is the
-Moodle-side counterpart to the contract in the dashboard repo
-(`docs/moodle-partnerapi-plugin-spec.md`).
+A Moodle local plugin that provides a cohort-scoped REST API for the Saylor
+Partner Dashboard. Moodle remains the source of truth; authorized partners read
+only data for cohorts explicitly assigned to their API client.
 
-The dashboard pulls learner data on a schedule; this plugin is what it calls.
-Moodle is the source of truth, the dashboard stores a synced snapshot, and
-partners read from that snapshot — they never query Moodle live.
+## Supported Moodle versions
 
-## What it provides
+Moodle 4.1 through 4.5 are supported. GitHub Actions runs the plugin's coding
+standard, PHPDoc, validation, PHPUnit, and Behat checks against both ends of that
+range. Moodle Workplace tenant isolation is not claimed or supported until it
+has been tested in a licensed Workplace environment.
 
-Five GET endpoints under `/local/partnerapi/v1/`, each returning a **bare JSON
-array** with real HTTP status codes (not a Moodle web-service envelope):
+## Endpoints
 
-| Endpoint | Params | Returns |
+All endpoints are under `/local/partnerapi/v1/` and use a client token supplied
+as `wstoken`.
+
+| Endpoint | Parameters | Result |
 |---|---|---|
-| `/v1/learners` | `cohortids[]` | learner profiles + cohort membership |
-| `/v1/cohorts` | (none) | the client's cohorts with names (`id`, `name`, `idnumber`) |
-| `/v1/enrollments` | `userids[]` | per-course progress + completion |
-| `/v1/completions` | `userids[]` | flat completion records (optional; unused by current sync) |
-| `/v1/grades` | `userids[]` | grade items |
-| `/v1/accesslogs` | `userids[]`, `since` | daily access counts |
+| `/accesslogs` | `userids[]`, `since`, `until` | Daily access counts in a bounded date range |
+| `/certificates` | `userids[]` | Issued certificate records |
+| `/cohorts` | none | Cohorts assigned to the client |
+| `/completions` | `userids[]` | Flat course completion records |
+| `/enrollments` | `userids[]` | Course enrolment and progress |
+| `/grades` | `userids[]` | Released, visible grade items |
+| `/learners` | `cohortids[]` | Learner profiles and affiliation provenance |
+| `/profilefields` | none | Registration form field definitions |
+| `/quizzes` | `userids[]` | Attempts released by Moodle's quiz review policy |
+| `/register` | JSON POST | Create an account within the client's cohort scope |
+| `/timeincourse` | `userids[]`, `since`, `until`, `page`, `perpage` | Bounded time-on-task estimates |
 
-Authentication is a per-client bearer token sent as `wstoken`. Every client is
-**scoped to an explicit set of cohorts**; the plugin enforces that scope on both
-cohort-keyed and user-keyed endpoints, so one partner's token can never read
-another partner's learners.
+User-keyed endpoints and cohort lists accept at most 200 unique IDs per request. The
+time-in-course endpoint accepts up to 1,000 IDs and processes a page of at most
+200 at a time. Its date range defaults to the last 90 days and cannot exceed
+366 days. `page` is zero-based.
 
-## Requirements
+## Security and privacy behavior
 
-- Moodle 4.1+ (tested target).
-- The standard log store (`logstore_standard`) enabled for `/v1/accesslogs`.
+- Tokens are opaque 64-character secrets and must be sent over HTTPS.
+- Every requested cohort and user is checked against the authenticated client.
+- Registration rejects email-domain affiliations outside the client's scope.
+- Self-service affiliation accepts only visible `AFF-` cohorts.
+- Editing another user's affiliation requires `moodle/cohort:assign`.
+- Hidden grades and unreleased quiz results are excluded from API responses.
+- The Moodle Privacy API describes, exports, and deletes affiliation provenance.
+- External sharing is declared in Privacy API metadata and is limited to the
+  administratively assigned client scope.
 
 ## Install
 
 1. Copy this directory to `MOODLE_ROOT/local/partnerapi`.
-2. Visit **Site administration → Notifications** (or run
-   `php admin/cli/upgrade.php`) to create the plugin tables.
+2. Visit **Site administration > Notifications**, or run
+   `php admin/cli/upgrade.php`.
 
 ## Create a scoped token
 
@@ -45,34 +59,14 @@ another partner's learners.
 php local/partnerapi/cli/create_client.php --name="Chandigarh" --cohorts=23360,36144
 ```
 
-This prints a `TOKEN:`; store it in the dashboard as the partner's
-`moodle_api_token`.
+Store the emitted token as a secret in the Partner Dashboard.
 
-## Test a call
+## Example
 
 ```bash
-curl "https://<moodle-host>/local/partnerapi/v1/learners?cohortids[]=23360&wstoken=<TOKEN>&moodlewsrestformat=json"
+curl "https://moodle.example/local/partnerapi/v1/learners?cohortids[]=23360&wstoken=TOKEN"
 ```
-
-## Error semantics
-
-| Condition | HTTP |
-|---|---|
-| success | 200 + JSON array |
-| invalid/missing token | 401 |
-| method other than GET | 405 |
-| internal error | 500 |
-
-The dashboard client retries only on `5xx` and `429`.
-
-## Security notes
-
-- Tokens are opaque 64-char hex strings; store and transmit over HTTPS only.
-- Cohort scope is enforced server-side; requested ids outside a token's scope
-  are ignored, never returned.
-- The plugin loads Moodle with `NO_MOODLE_COOKIES` and performs no session
-  login; it authenticates solely via the token table.
 
 ## License
 
-GPL v3 or later (consistent with Moodle core).
+GPL v3 or later.

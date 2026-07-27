@@ -41,7 +41,7 @@ $baseurl = new moodle_url('/local/partnerapi/manage.php');
 $PAGE->set_url($baseurl);
 $PAGE->set_context($context);
 
-// ----- Non-form actions (sesskey-protected) -------------------------------
+// Non-form actions.
 
 if ($action === 'regenerate' && $id) {
     require_sesskey();
@@ -73,7 +73,7 @@ if ($action === 'delete' && $id) {
     exit;
 }
 
-// ----- Create / edit form -------------------------------------------------
+// Create or edit form.
 
 $editing = ($action === 'edit' && $id);
 
@@ -106,7 +106,7 @@ if ($showform) {
     exit;
 }
 
-// ----- Client listing -----------------------------------------------------
+// Client listing.
 
 echo $OUTPUT->box(get_string('manage_intro', 'local_partnerapi'));
 

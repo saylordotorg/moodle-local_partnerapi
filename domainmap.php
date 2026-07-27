@@ -39,7 +39,7 @@ $PAGE->set_pagelayout('admin');
 $PAGE->set_title(get_string('autoaffiliation', 'local_partnerapi'));
 $PAGE->set_heading(get_string('autoaffiliation', 'local_partnerapi'));
 
-// ─── Handle form actions ─────────────────────────────────────────────
+// Handle form actions.
 
 $action = optional_param('action', '', PARAM_ALPHA);
 
@@ -54,34 +54,44 @@ if ($action === 'add' && confirm_sesskey()) {
         $cohort = $DB->get_record('cohort', ['id' => $cohortid]);
         if ($cohort && stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) === 0) {
             // Load current map, add, save.
-            $map = self_load_map();
+            $map = local_partnerapi_domainmap_load();
             $map[$domain] = (int) $cohortid;
-            self_save_map($map);
+            local_partnerapi_domainmap_save($map);
             redirect($thisurl, get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
         } else {
-            redirect($thisurl, 'Selected cohort is not a valid AFF- affiliation.', null, \core\output\notification::NOTIFY_ERROR);
+            redirect(
+                $thisurl,
+                get_string('domainmapinvalidcohort', 'local_partnerapi'),
+                null,
+                \core\output\notification::NOTIFY_ERROR
+            );
         }
     } else {
-        redirect($thisurl, 'Invalid domain format (e.g. example.edu).', null, \core\output\notification::NOTIFY_ERROR);
+        redirect(
+            $thisurl,
+            get_string('domainmapinvaliddomain', 'local_partnerapi'),
+            null,
+            \core\output\notification::NOTIFY_ERROR
+        );
     }
 }
 
 if ($action === 'delete' && confirm_sesskey()) {
     $domain = required_param('domain', PARAM_RAW_TRIMMED);
-    $map = self_load_map();
+    $map = local_partnerapi_domainmap_load();
     unset($map[strtolower($domain)]);
-    self_save_map($map);
+    local_partnerapi_domainmap_save($map);
     redirect($thisurl, get_string('changessaved'), null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
-// ─── Render page ─────────────────────────────────────────────────────
+// Render page.
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('autoaffiliation', 'local_partnerapi'));
 echo html_writer::tag('p', get_string('domainmap_desc_ui', 'local_partnerapi'));
 
 // Load current mappings and available AFF- cohorts.
-$map = self_load_map();
+$map = local_partnerapi_domainmap_load();
 $affcohorts = $DB->get_records_sql(
     "SELECT id, name, idnumber FROM {cohort} WHERE " . $DB->sql_like('idnumber', ':aff', false) . " ORDER BY name",
     ['aff' => LOCAL_PARTNERAPI_AFFILIATION_PREFIX . '%']
@@ -94,22 +104,32 @@ foreach ($affcohorts as $c) {
 // Existing mappings table.
 if (!empty($map)) {
     $table = new html_table();
-    $table->head = ['Email Domain', 'Affiliation', 'Actions'];
+    $table->head = [
+        get_string('emaildomain', 'local_partnerapi'),
+        get_string('affiliation', 'local_partnerapi'),
+        get_string('actions', 'local_partnerapi'),
+    ];
     $table->attributes['class'] = 'generaltable';
     foreach ($map as $domain => $cid) {
-        $label = $cohortnames[(int)$cid] ?? "Cohort #$cid (not found)";
+        $label = $cohortnames[(int) $cid] ?? get_string('cohortmissing', 'local_partnerapi', $cid);
         $deleteurl = new moodle_url($thisurl, [
             'action' => 'delete',
             'domain' => $domain,
             'sesskey' => sesskey(),
         ]);
-        $deletelink = html_writer::link($deleteurl, get_string('delete'),
-            ['class' => 'btn btn-sm btn-outline-danger']);
+        $deletelink = html_writer::link(
+            $deleteurl,
+            get_string('delete'),
+            ['class' => 'btn btn-sm btn-outline-danger']
+        );
         $table->data[] = [s($domain), s($label), $deletelink];
     }
     echo html_writer::table($table);
 } else {
-    echo html_writer::tag('p', html_writer::tag('em', 'No domain mappings configured yet.'));
+    echo html_writer::tag(
+        'p',
+        html_writer::tag('em', get_string('nodomainmappings', 'local_partnerapi'))
+    );
 }
 
 // Add new row form.
@@ -127,12 +147,16 @@ echo html_writer::start_div('d-flex flex-wrap align-items-end', ['style' => 'gap
 
 // Domain input.
 echo html_writer::start_div('form-group mb-0');
-echo html_writer::tag('label', 'Email domain', ['for' => 'id_domain', 'class' => 'd-block font-weight-bold', 'style' => 'margin-bottom: 0.5rem;']);
+echo html_writer::tag(
+    'label',
+    get_string('emaildomain', 'local_partnerapi'),
+    ['for' => 'id_domain', 'class' => 'd-block font-weight-bold', 'style' => 'margin-bottom: 0.5rem;']
+);
 echo html_writer::empty_tag('input', [
     'type' => 'text',
     'id' => 'id_domain',
     'name' => 'domain',
-    'placeholder' => 'e.g. cnu.edu',
+    'placeholder' => get_string('domainplaceholder', 'local_partnerapi'),
     'required' => 'required',
     'class' => 'form-control',
     'style' => 'min-width: 220px;',
@@ -141,17 +165,32 @@ echo html_writer::end_div();
 
 // Cohort dropdown.
 echo html_writer::start_div('form-group mb-0');
-echo html_writer::tag('label', 'Affiliation', ['for' => 'id_cohortid', 'class' => 'd-block font-weight-bold', 'style' => 'margin-bottom: 0.5rem;']);
+echo html_writer::tag(
+    'label',
+    get_string('affiliation', 'local_partnerapi'),
+    ['for' => 'id_cohortid', 'class' => 'd-block font-weight-bold', 'style' => 'margin-bottom: 0.5rem;']
+);
 if (empty($cohortnames)) {
-    echo html_writer::tag('span', 'No AFF- cohorts available. Create one first.', ['class' => 'text-danger']);
+    echo html_writer::tag('span', get_string('noaffcohorts', 'local_partnerapi'), ['class' => 'text-danger']);
 } else {
-    echo html_writer::select($cohortnames, 'cohortid', '', ['' => 'Choose...'], ['id' => 'id_cohortid', 'class' => 'form-control', 'required' => 'required', 'style' => 'min-width: 260px;']);
+    echo html_writer::select(
+        $cohortnames,
+        'cohortid',
+        '',
+        ['' => get_string('chooseoption', 'local_partnerapi')],
+        [
+            'id' => 'id_cohortid',
+            'class' => 'form-control',
+            'required' => 'required',
+            'style' => 'min-width: 260px;',
+        ]
+    );
 }
 echo html_writer::end_div();
 
 // Submit button.
 if (!empty($cohortnames)) {
-    echo html_writer::tag('button', '+ Add mapping', [
+    echo html_writer::tag('button', get_string('addmapping', 'local_partnerapi'), [
         'type' => 'submit',
         'class' => 'btn btn-primary',
         'style' => 'height: 38px;',
@@ -163,15 +202,28 @@ echo html_writer::end_tag('form');
 
 echo $OUTPUT->footer();
 
-// ─── Helpers ─────────────────────────────────────────────────────────
+// Helpers.
 
-function self_load_map(): array {
+/**
+ * Load configured domain mappings.
+ *
+ * @return array<string, int> Domain to cohort id mapping.
+ */
+function local_partnerapi_domainmap_load(): array {
     $json = get_config('local_partnerapi', 'domain_cohort_map');
-    if (empty($json)) return [];
+    if (empty($json)) {
+        return [];
+    }
     $map = json_decode($json, true);
     return is_array($map) ? $map : [];
 }
 
-function self_save_map(array $map): void {
+/**
+ * Save configured domain mappings.
+ *
+ * @param array $map Domain to cohort id mapping.
+ * @return void
+ */
+function local_partnerapi_domainmap_save(array $map): void {
     set_config('domain_cohort_map', json_encode($map, JSON_UNESCAPED_SLASHES), 'local_partnerapi');
 }

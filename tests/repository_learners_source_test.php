@@ -40,7 +40,6 @@ require_once($CFG->dirroot . '/cohort/lib.php');
  * @covers \local_partnerapi\repository
  */
 final class repository_learners_source_test extends \advanced_testcase {
-
     /**
      * The full set of keys every learner object in the response must carry.
      * Pinning this list guards Req 2.4 / 5.4: the change is additive only, so no
@@ -111,8 +110,11 @@ final class repository_learners_source_test extends \advanced_testcase {
         $learner = $this->find_learner($learners, (int)$user->id);
 
         $this->assertNotNull($learner, 'The seeded learner must appear in the response');
-        $this->assertSame(provenance::SOURCE_REGISTRATION, $learner['affiliation_source'],
-            'affiliation_source must equal the stored provenance value (Req 2.1)');
+        $this->assertSame(
+            provenance::SOURCE_REGISTRATION,
+            $learner['affiliation_source'],
+            'affiliation_source must equal the stored provenance value (Req 2.1)'
+        );
     }
 
     /**
@@ -137,8 +139,10 @@ final class repository_learners_source_test extends \advanced_testcase {
         $barelearner = $this->find_learner($learners, (int)$bare->id);
 
         $this->assertNotNull($barelearner, 'The member with no provenance must still appear');
-        $this->assertNull($barelearner['affiliation_source'],
-            'affiliation_source must be null when no provenance row exists (Req 2.2)');
+        $this->assertNull(
+            $barelearner['affiliation_source'],
+            'affiliation_source must be null when no provenance row exists (Req 2.2)'
+        );
     }
 
     /**
@@ -166,8 +170,11 @@ final class repository_learners_source_test extends \advanced_testcase {
         $learner = $this->find_learner($learners, (int)$user->id);
 
         $this->assertNotNull($learner, 'The learner must appear in the response');
-        $this->assertSame(provenance::SOURCE_REGISTRATION, $learner['affiliation_source'],
-            'The highest-precedence source must win across AFF- cohorts (Req 2.3)');
+        $this->assertSame(
+            provenance::SOURCE_REGISTRATION,
+            $learner['affiliation_source'],
+            'The highest-precedence source must win across AFF- cohorts (Req 2.3)'
+        );
     }
 
     /**
@@ -189,12 +196,18 @@ final class repository_learners_source_test extends \advanced_testcase {
         foreach ($learners as $learner) {
             // Every expected key must be present (additive shape).
             foreach (self::LEARNER_KEYS as $key) {
-                $this->assertArrayHasKey($key, $learner,
-                    "Learner object must retain the '$key' key (Req 2.4/5.4)");
+                $this->assertArrayHasKey(
+                    $key,
+                    $learner,
+                    "Learner object must retain the '$key' key (Req 2.4/5.4)"
+                );
             }
             // No unexpected keys were introduced beyond the documented contract.
-            $this->assertEqualsCanonicalizing(self::LEARNER_KEYS, array_keys($learner),
-                'Learner object keys must match the documented additive contract exactly');
+            $this->assertEqualsCanonicalizing(
+                self::LEARNER_KEYS,
+                array_keys($learner),
+                'Learner object keys must match the documented additive contract exactly'
+            );
         }
     }
 }

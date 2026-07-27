@@ -47,6 +47,7 @@ require_once($CFG->dirroot . '/cohort/lib.php');
 require_once($CFG->dirroot . '/local/partnerapi/lib.php');
 
 use local_partnerapi\client;
+use local_partnerapi\observer;
 use local_partnerapi\util;
 
 // Only POST allowed.
@@ -79,7 +80,7 @@ if (!is_array($jsonbody)) {
     util::error(400, 'Invalid JSON body');
 }
 
-// ─── Validate required fields ────────────────────────────────────────
+// Validate required fields.
 
 $email = trim($jsonbody['email'] ?? '');
 $firstname = trim($jsonbody['firstname'] ?? '');
@@ -112,7 +113,15 @@ if (!$cohort || stripos((string)$cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_
     util::error(400, 'Invalid or non-affiliation cohort');
 }
 
-// ─── Check for duplicate email/username ──────────────────────────────
+// An email-domain mapping is an affiliation decision, not authorization. Reject
+// a derived cohort outside the authenticated client's scope before creating the
+// account.
+$mappedcohorts = observer::mapped_affiliations_for_email($email);
+if (array_diff($mappedcohorts, $allowedcohorts)) {
+    util::error(403, 'Email domain is not authorized for this client');
+}
+
+// Check for duplicate email or username.
 
 $username = trim($jsonbody['username'] ?? '');
 if (empty($username)) {
@@ -135,14 +144,14 @@ if ($DB->record_exists('user', ['username' => $username])) {
     util::error(409, 'This username is already taken');
 }
 
-// ─── Create the user ─────────────────────────────────────────────────
+// Create the user.
 
 $user = new stdClass();
 $user->username = strtolower($username);
 $user->email = strtolower($email);
 $user->firstname = $firstname;
 $user->lastname = $lastname;
-$user->password = $password; // user_create_user will hash it
+$user->password = $password; // The user API hashes the password.
 $user->auth = 'manual';
 $user->confirmed = 1;
 $user->mnethostid = $CFG->mnet_localhost_id;
@@ -156,13 +165,21 @@ if (!empty($jsonbody['country']) && strlen($jsonbody['country']) === 2) {
     $user->country = strtoupper(trim($jsonbody['country']));
 }
 
+$creationfailed = false;
+observer::begin_registration_scope($allowedcohorts);
 try {
     $userid = user_create_user($user, true, false);
-} catch (Exception $e) {
-    util::error(500, 'Account creation failed: ' . $e->getMessage());
+} catch (\Throwable $exception) {
+    debugging('Partner API account creation failed: ' . $exception->getMessage(), DEBUG_DEVELOPER);
+    $creationfailed = true;
+} finally {
+    observer::end_registration_scope();
+}
+if ($creationfailed) {
+    util::error(500, 'Account creation failed');
 }
 
-// ─── Set custom profile fields ───────────────────────────────────────
+// Set custom profile fields.
 
 if (!empty($jsonbody['customfields']) && is_array($jsonbody['customfields'])) {
     require_once($CFG->dirroot . '/user/profile/lib.php');
@@ -185,12 +202,14 @@ if (!empty($jsonbody['customfields']) && is_array($jsonbody['customfields'])) {
     }
 }
 
-// ─── Add to cohort ───────────────────────────────────────────────────
+// Add to cohort.
 
-cohort_add_member($cohortid, $userid);
+if (!$DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])) {
+    cohort_add_member($cohortid, $userid);
+}
 \local_partnerapi\provenance::record($userid, $cohortid, \local_partnerapi\provenance::SOURCE_REGISTRATION);
 
-// ─── Return success ──────────────────────────────────────────────────
+// Return success.
 
 util::send_json([
     'success' => true,

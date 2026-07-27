@@ -34,15 +34,26 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/../lib.php');
 
+// phpcs:disable moodle.Commenting.ValidTags.Invalid -- PHPMD suppression tag.
+/**
+ * Applies configured email-domain affiliation rules to user events.
+ *
+ * The registration scope is read and written across event callbacks; PHPMD
+ * does not resolve those static accesses and reports the field as unused.
+ *
+ * @SuppressWarnings(PHPMD.UnusedPrivateField)
+ */
 class observer {
-
+    // phpcs:enable moodle.Commenting.ValidTags.Invalid
+    /** @var int[]|null Cohorts allowed while an API registration event is handled. */
+    private static $registrationscope = null;
     /**
      * Handle user_created event — auto-affiliate by email domain.
      *
      * @param \core\event\user_created $event
      */
-    public static function user_created(\core\event\user_created $event) {
-        self::auto_affiliate($event->relateduserid);
+    public static function user_created(\core\event\user_created $event): void {
+        self::auto_affiliate((int) $event->relateduserid);
     }
 
     /**
@@ -51,17 +62,65 @@ class observer {
      *
      * @param \core\event\user_loggedin $event
      */
-    public static function user_loggedin(\core\event\user_loggedin $event) {
-        self::auto_affiliate($event->userid);
+    public static function user_loggedin(\core\event\user_loggedin $event): void {
+        self::auto_affiliate((int) $event->userid);
     }
 
     /**
-     * Check the user's email domain against configured mappings and add them
-     * to the matching AFF- cohort(s) if they're not already a member.
+     * Restrict domain-derived affiliations during partner API registration.
+     *
+     * @param int[] $cohortids Cohorts authorized for the authenticated client.
+     * @return void
+     */
+    public static function begin_registration_scope(array $cohortids): void {
+        $cohortids = array_map('intval', $cohortids);
+        self::$registrationscope = array_values(array_unique(array_filter($cohortids)));
+    }
+
+    /**
+     * Clear the temporary partner API registration scope.
+     *
+     * @return void
+     */
+    public static function end_registration_scope(): void {
+        self::$registrationscope = null;
+    }
+
+    /**
+     * Resolve configured AFF- cohorts for an email address.
+     *
+     * @param string $email Email address to resolve.
+     * @return int[] Matching, valid affiliation cohort ids.
+     */
+    public static function mapped_affiliations_for_email(string $email): array {
+        global $DB;
+
+        $parts = explode('@', $email);
+        if (count($parts) !== 2) {
+            return [];
+        }
+
+        $domain = strtolower(trim($parts[1]));
+        $cohortid = (int) (self::get_domain_mappings()[$domain] ?? 0);
+        if ($cohortid <= 0) {
+            return [];
+        }
+
+        $cohort = $DB->get_record('cohort', ['id' => $cohortid], 'id, idnumber', IGNORE_MISSING);
+        if (!$cohort || stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
+            return [];
+        }
+
+        return [(int) $cohort->id];
+    }
+
+    /**
+     * Check a user's email mapping and add one eligible AFF- membership.
      *
      * @param int $userid
+     * @return void
      */
-    private static function auto_affiliate(int $userid) {
+    private static function auto_affiliate(int $userid): void {
         global $DB;
 
         if ($userid <= 0) {
@@ -73,49 +132,51 @@ class observer {
             return;
         }
 
-        $parts = explode('@', $user->email);
-        if (count($parts) !== 2) {
-            return;
-        }
-        $domain = strtolower(trim($parts[1]));
-        if (empty($domain)) {
-            return;
-        }
-
-        // Load the domain→cohort mappings from the plugin config.
-        $mappings = self::get_domain_mappings();
-        if (empty($mappings)) {
+        // Never let a later login overwrite or add to an explicit affiliation.
+        if (self::has_affiliation($userid)) {
             return;
         }
 
         require_once(__DIR__ . '/../../../cohort/lib.php');
 
-        foreach ($mappings as $configDomain => $cohortId) {
-            $configDomain = strtolower(trim($configDomain));
-            if ($configDomain === $domain) {
-                // Verify the cohort exists and is an AFF- cohort.
-                $cohort = $DB->get_record('cohort', ['id' => (int) $cohortId], 'id, idnumber');
-                if (!$cohort) {
-                    continue;
-                }
-                if (stripos((string) $cohort->idnumber, LOCAL_PARTNERAPI_AFFILIATION_PREFIX) !== 0) {
-                    continue;
-                }
-                // Add the user if not already a member.
-                if (!$DB->record_exists('cohort_members', ['cohortid' => $cohort->id, 'userid' => $userid])) {
-                    cohort_add_member($cohort->id, $userid);
-                    provenance::record($userid, (int) $cohort->id, provenance::SOURCE_SIGNUP);
-                }
+        foreach (self::mapped_affiliations_for_email((string) $user->email) as $cohortid) {
+            if (self::$registrationscope !== null && !in_array($cohortid, self::$registrationscope, true)) {
+                continue;
+            }
+            if (!$DB->record_exists('cohort_members', ['cohortid' => $cohortid, 'userid' => $userid])) {
+                cohort_add_member($cohortid, $userid);
+                provenance::record($userid, $cohortid, provenance::SOURCE_SIGNUP);
             }
         }
     }
 
     /**
+     * Check whether a user already belongs to any AFF- cohort.
+     *
+     * @param int $userid User id to check.
+     * @return bool Whether an affiliation membership already exists.
+     */
+    private static function has_affiliation(int $userid): bool {
+        global $DB;
+
+        $sql = "SELECT 1
+                  FROM {cohort_members} cm
+                  JOIN {cohort} c ON c.id = cm.cohortid
+                 WHERE cm.userid = :userid
+                   AND " . $DB->sql_like('c.idnumber', ':aff', false);
+
+        return $DB->record_exists_sql($sql, [
+            'userid' => $userid,
+            'aff' => LOCAL_PARTNERAPI_AFFILIATION_PREFIX . '%',
+        ]);
+    }
+
+    /**
      * Load the domain→cohort mapping from the plugin config (JSON).
      *
-     * Format: {"cnu.in.edu": 3, "cnu.edu": 3, "acme.org": 5}
+     * Format: {"cnu.in.edu": 3, "cnu.edu": 3, "acme.org": 5}.
      *
-     * @return array<string, int> domain → cohort id
+     * @return array<string, int> Domain to cohort id mapping.
      */
     private static function get_domain_mappings(): array {
         $json = get_config('local_partnerapi', 'domain_cohort_map');

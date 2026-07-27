@@ -26,9 +26,12 @@
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
+// phpcs:ignore moodle.Files.MoodleInternal.MoodleInternalGlobalState -- Bootstrap includes config.php.
 require(__DIR__ . '/../bootstrap.php');
+
+defined('MOODLE_INTERNAL') || die();
 
 use local_partnerapi\repository;
 use local_partnerapi\util;
 
-util::send_json(repository::get_cohorts($allowedcohorts));
+util::send_json(repository::get_cohorts(array_slice($allowedcohorts, 0, util::MAX_COHORTIDS)));

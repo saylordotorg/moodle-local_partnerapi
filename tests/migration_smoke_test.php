@@ -35,15 +35,12 @@
 
 namespace local_partnerapi;
 
-defined('MOODLE_INTERNAL') || die();
-
 /**
  * Smoke tests for the provenance table migration (Req 5.1, 5.2).
  *
  * @covers \xmldb_local_partnerapi_upgrade
  */
 final class migration_smoke_test extends \advanced_testcase {
-
     /** @var string The plugin-owned table the migration creates. */
     private const PROVENANCE_TABLE = 'local_partnerapi_provenance';
 
@@ -79,15 +76,18 @@ final class migration_smoke_test extends \advanced_testcase {
         $dbman = $DB->get_manager();
 
         // Req 5.2: the new table exists.
-        $this->assertTrue($dbman->table_exists(self::PROVENANCE_TABLE),
-            'The migration must create the local_partnerapi_provenance table (Req 5.2)');
+        $this->assertTrue(
+            $dbman->table_exists(self::PROVENANCE_TABLE),
+            'The migration must create the local_partnerapi_provenance table (Req 5.2)'
+        );
 
         // Every documented field is present (checked through the DB manager).
         $table = new \xmldb_table(self::PROVENANCE_TABLE);
         foreach (self::PROVENANCE_COLUMNS as $column) {
             $this->assertTrue(
                 $dbman->field_exists($table, new \xmldb_field($column)),
-                "The provenance table must expose the '$column' column (Req 5.2)");
+                "The provenance table must expose the '$column' column (Req 5.2)"
+            );
         }
 
         // Cross-check against the live column metadata: exactly these columns.
@@ -95,7 +95,8 @@ final class migration_smoke_test extends \advanced_testcase {
         $this->assertEqualsCanonicalizing(
             self::PROVENANCE_COLUMNS,
             array_keys($columns),
-            'The provenance table columns must match the documented schema exactly (Req 5.2)');
+            'The provenance table columns must match the documented schema exactly (Req 5.2)'
+        );
     }
 
     /**
@@ -123,8 +124,11 @@ final class migration_smoke_test extends \advanced_testcase {
 
         // First insert for (userid=1, cohortid=1) succeeds.
         $firstid = $DB->insert_record(self::PROVENANCE_TABLE, $row);
-        $this->assertGreaterThan(0, $firstid,
-            'The first (userid, cohortid) row must insert successfully');
+        $this->assertGreaterThan(
+            0,
+            $firstid,
+            'The first (userid, cohortid) row must insert successfully'
+        );
 
         // A second row with the SAME (userid=1, cohortid=1) must be rejected by
         // the UNIQUE(userid, cohortid) index, proving the index exists/enforces.
@@ -136,14 +140,18 @@ final class migration_smoke_test extends \advanced_testcase {
             $threw = true;
         }
 
-        $this->assertTrue($threw,
+        $this->assertTrue(
+            $threw,
             'A duplicate (userid, cohortid) insert must throw, proving the '
-            . 'UNIQUE(userid, cohortid) index is enforced (Req 5.2)');
+            . 'UNIQUE(userid, cohortid) index is enforced (Req 5.2)'
+        );
 
         // Exactly one row remains for the pair (the duplicate did not persist).
-        $this->assertSame(1,
+        $this->assertSame(
+            1,
             $DB->count_records(self::PROVENANCE_TABLE, ['userid' => 1, 'cohortid' => 1]),
-            'Only one row may exist per (userid, cohortid) after a rejected duplicate');
+            'Only one row may exist per (userid, cohortid) after a rejected duplicate'
+        );
     }
 
     /**
@@ -168,8 +176,10 @@ final class migration_smoke_test extends \advanced_testcase {
         // The table already exists, so db/upgrade.php's
         // `if (!$dbman->table_exists($table))` guard evaluates false and
         // re-running the create step would be a no-op (create-if-absent).
-        $this->assertTrue($dbman->table_exists($table),
-            'The provenance table must already exist, making the upgrade guard a no-op (Req 5.1)');
+        $this->assertTrue(
+            $dbman->table_exists($table),
+            'The provenance table must already exist, making the upgrade guard a no-op (Req 5.1)'
+        );
     }
 
     /**
@@ -188,9 +198,11 @@ final class migration_smoke_test extends \advanced_testcase {
         $dbman = $DB->get_manager();
 
         foreach (['user', 'cohort', 'cohort_members'] as $coretable) {
-            $this->assertTrue($dbman->table_exists($coretable),
+            $this->assertTrue(
+                $dbman->table_exists($coretable),
                 "Core table '$coretable' must remain present; the migration only "
-                . 'ADDS the provenance table and never alters core tables (Req 5.2)');
+                . 'ADDS the provenance table and never alters core tables (Req 5.2)'
+            );
         }
     }
 }

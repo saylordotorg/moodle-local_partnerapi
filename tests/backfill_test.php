@@ -42,7 +42,6 @@ require_once($CFG->dirroot . '/cohort/lib.php');
  * @covers ::local_partnerapi_run_backfill
  */
 final class backfill_test extends \advanced_testcase {
-
     /**
      * Seed one AFF- cohort, point domain_cohort_map at it for `acme.org`, and
      * add three members: a domain match, a case-insensitive domain match, and a
@@ -58,10 +57,11 @@ final class backfill_test extends \advanced_testcase {
     private function seed(): array {
         $generator = $this->getDataGenerator();
 
-        // 1. An AFF- cohort, mapped to the acme.org email domain.
+        // 1. An AFF- cohort and members. Configure the mapping only after the
+        // users exist so the user_created observer cannot pre-populate the
+        // provenance being tested by the backfill itself.
         $cohort = $generator->create_cohort(['idnumber' => 'AFF-ACME', 'name' => 'Acme']);
         $affcohortid = (int) $cohort->id;
-        set_config('domain_cohort_map', json_encode(['acme.org' => $affcohortid]), 'local_partnerapi');
 
         // 2. Members of the AFF- cohort.
         // Domain matches exactly.
@@ -74,6 +74,7 @@ final class backfill_test extends \advanced_testcase {
         cohort_add_member($affcohortid, (int) $usermatch->id);
         cohort_add_member($affcohortid, (int) $usermatchcase->id);
         cohort_add_member($affcohortid, (int) $usernomatch->id);
+        set_config('domain_cohort_map', json_encode(['acme.org' => $affcohortid]), 'local_partnerapi');
 
         return [
             'affcohortid'     => $affcohortid,
@@ -127,8 +128,11 @@ final class backfill_test extends \advanced_testcase {
 
         // Only the two matching members were recorded.
         $this->assertSame(2, $count, 'Backfill must report exactly the two matching members recorded');
-        $this->assertSame(2, $DB->count_records('local_partnerapi_provenance'),
-            'Exactly two provenance rows must exist after the backfill');
+        $this->assertSame(
+            2,
+            $DB->count_records('local_partnerapi_provenance'),
+            'Exactly two provenance rows must exist after the backfill'
+        );
     }
 
     /**
@@ -148,18 +152,32 @@ final class backfill_test extends \advanced_testcase {
         $this->assertSame(2, $firstcount);
 
         // Capture the full row set (id => source/timecreated/timemodified).
-        $before = $DB->get_records('local_partnerapi_provenance', null, 'id ASC',
-            'id, userid, cohortid, source, timecreated, timemodified');
+        $before = $DB->get_records(
+            'local_partnerapi_provenance',
+            null,
+            'id ASC',
+            'id, userid, cohortid, source, timecreated, timemodified'
+        );
 
         // Req 3.4: a second run changes nothing — same rows, same values.
         local_partnerapi_run_backfill();
-        $after = $DB->get_records('local_partnerapi_provenance', null, 'id ASC',
-            'id, userid, cohortid, source, timecreated, timemodified');
+        $after = $DB->get_records(
+            'local_partnerapi_provenance',
+            null,
+            'id ASC',
+            'id, userid, cohortid, source, timecreated, timemodified'
+        );
 
-        $this->assertEquals($before, $after,
-            'Re-running the backfill must leave the provenance row set unchanged (idempotent)');
-        $this->assertSame(array_keys($before), array_keys($after),
-            'Idempotent re-run must not insert, delete, or re-key any provenance row');
+        $this->assertEquals(
+            $before,
+            $after,
+            'Re-running the backfill must leave the provenance row set unchanged (idempotent)'
+        );
+        $this->assertSame(
+            array_keys($before),
+            array_keys($after),
+            'Idempotent re-run must not insert, delete, or re-key any provenance row'
+        );
 
         // No-downgrade: manually upgrade userMatch to the highest-precedence
         // source, then re-run the backfill (which only emits signup_partner_choice).
@@ -187,8 +205,11 @@ final class backfill_test extends \advanced_testcase {
         );
 
         // Still exactly two rows; the non-match never gained a row.
-        $this->assertSame(2, $DB->count_records('local_partnerapi_provenance'),
-            'Row count must remain two across all re-runs');
+        $this->assertSame(
+            2,
+            $DB->count_records('local_partnerapi_provenance'),
+            'Row count must remain two across all re-runs'
+        );
     }
 
     /**
@@ -207,16 +228,28 @@ final class backfill_test extends \advanced_testcase {
 
         // Empty config: nothing to do.
         set_config('domain_cohort_map', '', 'local_partnerapi');
-        $this->assertSame(0, local_partnerapi_run_backfill(),
-            'Empty domain_cohort_map must record nothing');
-        $this->assertSame(0, $DB->count_records('local_partnerapi_provenance'),
-            'No provenance rows may be created when the config is empty');
+        $this->assertSame(
+            0,
+            local_partnerapi_run_backfill(),
+            'Empty domain_cohort_map must record nothing'
+        );
+        $this->assertSame(
+            0,
+            $DB->count_records('local_partnerapi_provenance'),
+            'No provenance rows may be created when the config is empty'
+        );
 
         // Invalid JSON: parsed defensively, nothing to do.
         set_config('domain_cohort_map', 'not json', 'local_partnerapi');
-        $this->assertSame(0, local_partnerapi_run_backfill(),
-            'Invalid (non-JSON) domain_cohort_map must record nothing');
-        $this->assertSame(0, $DB->count_records('local_partnerapi_provenance'),
-            'No provenance rows may be created when the config is invalid JSON');
+        $this->assertSame(
+            0,
+            local_partnerapi_run_backfill(),
+            'Invalid (non-JSON) domain_cohort_map must record nothing'
+        );
+        $this->assertSame(
+            0,
+            $DB->count_records('local_partnerapi_provenance'),
+            'No provenance rows may be created when the config is invalid JSON'
+        );
     }
 }
