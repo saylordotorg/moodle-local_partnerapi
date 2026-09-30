@@ -97,8 +97,26 @@ if (empty($firstname)) {
 if (empty($lastname)) {
     util::error(400, 'Last name is required');
 }
+// Password problems are something the learner can fix, so they come back tagged
+// with the field and a plain-language summary of the site's rules. The form
+// shows that under the password box instead of failing the whole submission.
+// user_create_user() does not apply the site password policy itself, so without
+// check_password_policy() accounts could be created that the policy forbids.
+$passwordhint = html_to_text(print_password_policy(), 0, false);
 if (strlen($password) < 8) {
-    util::error(400, 'Password must be at least 8 characters');
+    util::send_json([
+        'error' => 'Password must be at least 8 characters',
+        'field' => 'password',
+        'hint' => $passwordhint,
+    ], 400);
+}
+$policyerror = '';
+if (!check_password_policy($password, $policyerror)) {
+    util::send_json([
+        'error' => 'Password does not meet the requirements',
+        'field' => 'password',
+        'hint' => $passwordhint,
+    ], 400);
 }
 if ($cohortid <= 0) {
     util::error(400, 'Cohort ID is required');

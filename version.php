@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_partnerapi';
-$plugin->version   = 2026072400;       // YYYYMMDDXX.
+$plugin->version   = 2026093000;       // YYYYMMDDXX.
 $plugin->requires  = 2022112800;       // Moodle 4.1 (LTS) or later.
 $plugin->supported = [401, 405];        // Versions covered by the CI matrix.
 $plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = '0.2.0';
+$plugin->release   = '0.2.1';
